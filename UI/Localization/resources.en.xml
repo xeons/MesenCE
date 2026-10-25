@@ -3409,6 +3409,7 @@ E
 			<Value ID="OpenNecDspDebugger">Open DSP Debugger</Value>
 			<Value ID="OpenCx4Debugger">Open CX4 Debugger</Value>
 			<Value ID="OpenGameboyDebugger">Open Game Boy Debugger</Value>
+			<Value ID="OpenMdZ80Debugger">Open Z80 Debugger (Mega Drive)</Value>
 			<Value ID="OpenEventViewer">Open Event Viewer</Value>
 			<Value ID="OpenMemoryTools">Open Memory Viewer</Value>
 			<Value ID="OpenProfiler">Open Profiler</Value>
@@ -3692,6 +3693,7 @@ E
 			<Value ID="OpenNecDspDebugger">DSP Debugger</Value>
 			<Value ID="OpenCx4Debugger">CX4 Debugger</Value>
 			<Value ID="OpenGameboyDebugger">Game Boy Debugger</Value>
+			<Value ID="OpenMdZ80Debugger">Z80 Debugger</Value>
 			<Value ID="OpenEventViewer">Event Viewer</Value>
 			<Value ID="OpenMemoryTools">Memory Viewer</Value>
 			<Value ID="OpenProfiler">Profiler</Value>

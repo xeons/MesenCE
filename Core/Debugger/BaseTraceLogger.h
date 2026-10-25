@@ -119,7 +119,10 @@ enum class RowDataType
 	DS,
 	ES,
 	SI,
-	DI
+	DI,
+
+	USP,
+	SSP
 };
 
 struct TraceLogPpuState

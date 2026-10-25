@@ -139,6 +139,7 @@ public static class OpCodeHelper
 	{
 		//TODOSMS add missing descriptions, etc.
 		InitDocumentation(CpuType.Sms, ReadDocumentationFile("SmsDocumentation.json"));
+		_data[CpuType.MdZ80] = _data[CpuType.Sms];
 	}
 
 	private static void InitWsDocumentation()

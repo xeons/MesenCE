@@ -25,6 +25,8 @@
 #include "GBA/GbaMemoryManager.h"
 #include "WS/WsConsole.h"
 #include "WS/WsMemoryManager.h"
+#include "MD/MdConsole.h"
+#include "MD/MdMemoryManager.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Debugger/DebugTypes.h"
 #include "Debugger/DebugBreakHelper.h"
@@ -56,6 +58,8 @@ MemoryDumper::MemoryDumper(Debugger* debugger)
 		_gbaConsole = gba;
 	} else if(WsConsole* ws = dynamic_cast<WsConsole*>(console)) {
 		_wsConsole = ws;
+	} else if(MdConsole* md = dynamic_cast<MdConsole*>(console)) {
+		_mdConsole = md;
 	}
 
 	for(int i = 0; i < DebugUtilities::GetMemoryTypeCount(); i++) {
@@ -104,6 +108,8 @@ uint32_t MemoryDumper::GetMemorySize(MemoryType type)
 		case MemoryType::SmsMemory: return 0x10000;
 		case MemoryType::GbaMemory: return 0x10000000;
 		case MemoryType::WsMemory: return 0x100000;
+		case MemoryType::MdMemory: return 0x1000000;
+		case MemoryType::MdZ80Memory: return 0x10000;
 		case MemoryType::SnesRegister: return 0x10000;
 		case MemoryType::SmsPort: return 0x100;
 		case MemoryType::WsPort: return 0x10000;
@@ -234,6 +240,26 @@ void MemoryDumper::GetMemoryState(MemoryType type, uint8_t* buffer)
 			break;
 		}
 
+		case MemoryType::MdMemory: {
+			if(_mdConsole) {
+				MdMemoryManager* memManager = _mdConsole->GetMemoryManager();
+				for(int i = 0; i <= 0xFFFFFF; i++) {
+					buffer[i] = memManager->DebugRead(i);
+				}
+			}
+			break;
+		}
+
+		case MemoryType::MdZ80Memory: {
+			if(_mdConsole) {
+				MdMemoryManager* memManager = _mdConsole->GetMemoryManager();
+				for(int i = 0; i <= 0xFFFF; i++) {
+					buffer[i] = memManager->DebugReadZ80(i);
+				}
+			}
+			break;
+		}
+
 		default:
 			uint8_t* src = GetMemoryBuffer(type);
 			if(src) {
@@ -286,6 +312,8 @@ void MemoryDumper::InternalSetMemoryValues(MemoryType originalMemoryType, uint32
 			case MemoryType::SmsMemory: _smsConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::GbaMemory: _gbaConsole->GetMemoryManager()->DebugWrite(address, value); break;
 			case MemoryType::WsMemory: _wsConsole->GetMemoryManager()->DebugWrite(address, value); break;
+			case MemoryType::MdMemory: _mdConsole->GetMemoryManager()->DebugWrite(address, value); break;
+			case MemoryType::MdZ80Memory: _mdConsole->GetMemoryManager()->DebugWriteZ80(address, value); break;
 			case MemoryType::SpcDspRegisters: _spc->DebugWriteDspReg(address, value); break;
 
 			default:
@@ -388,10 +416,29 @@ uint8_t MemoryDumper::InternalGetMemoryValue(MemoryType memoryType, uint32_t add
 		case MemoryType::GbaMemory: return _gbaConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::WsMemory: return _wsConsole->GetMemoryManager()->DebugRead(address);
 		case MemoryType::WsPort: return _wsConsole->GetMemoryManager()->DebugReadPort<uint8_t>(address);
+		case MemoryType::MdMemory: return _mdConsole->GetMemoryManager()->DebugRead(address);
+		case MemoryType::MdZ80Memory: return _mdConsole->GetMemoryManager()->DebugReadZ80(address);
 
 		default:
 			uint8_t* src = GetMemoryBuffer(memoryType);
 			return src ? src[address] : 0;
+	}
+}
+
+bool MemoryDumper::IsBigEndian(MemoryType memoryType)
+{
+	switch(memoryType) {
+		case MemoryType::MdMemory:
+		case MemoryType::MdPrgRom:
+		case MemoryType::MdWorkRam:
+		case MemoryType::MdSaveRam:
+		case MemoryType::MdVideoRam:
+		case MemoryType::MdColorRam:
+		case MemoryType::MdVsRam:
+			return true;
+
+		default:
+			return false;
 	}
 }
 
@@ -400,6 +447,9 @@ uint16_t MemoryDumper::GetMemoryValue16(MemoryType memoryType, uint32_t address,
 	uint32_t memorySize = GetMemorySize(memoryType);
 	uint8_t lsb = GetMemoryValue(memoryType, address);
 	uint8_t msb = GetMemoryValue(memoryType, address + 1 >= memorySize ? 0 : address + 1);
+	if(IsBigEndian(memoryType)) {
+		std::swap(lsb, msb);
+	}
 	return (msb << 8) | lsb;
 }
 
@@ -410,12 +460,20 @@ uint32_t MemoryDumper::GetMemoryValue32(MemoryType memoryType, uint32_t address,
 	uint8_t b1 = GetMemoryValue(memoryType, address + 1 >= memorySize ? 0 : address + 1);
 	uint8_t b2 = GetMemoryValue(memoryType, address + 2 >= memorySize ? 0 : address + 2);
 	uint8_t b3 = GetMemoryValue(memoryType, address + 3 >= memorySize ? 0 : address + 3);
+	if(IsBigEndian(memoryType)) {
+		return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+	}
 	return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
 }
 
 void MemoryDumper::SetMemoryValue16(MemoryType memoryType, uint32_t address, uint16_t value, bool disableSideEffects)
 {
 	DebugBreakHelper helper(_debugger);
+	if(IsBigEndian(memoryType)) {
+		SetMemoryValue(memoryType, address, (uint8_t)(value >> 8), disableSideEffects);
+		SetMemoryValue(memoryType, address + 1, (uint8_t)value, disableSideEffects);
+		return;
+	}
 	SetMemoryValue(memoryType, address, (uint8_t)value, disableSideEffects);
 	SetMemoryValue(memoryType, address + 1, (uint8_t)(value >> 8), disableSideEffects);
 }
@@ -423,6 +481,13 @@ void MemoryDumper::SetMemoryValue16(MemoryType memoryType, uint32_t address, uin
 void MemoryDumper::SetMemoryValue32(MemoryType memoryType, uint32_t address, uint32_t value, bool disableSideEffects)
 {
 	DebugBreakHelper helper(_debugger);
+	if(IsBigEndian(memoryType)) {
+		SetMemoryValue(memoryType, address, (uint8_t)(value >> 24), disableSideEffects);
+		SetMemoryValue(memoryType, address + 1, (uint8_t)(value >> 16), disableSideEffects);
+		SetMemoryValue(memoryType, address + 2, (uint8_t)(value >> 8), disableSideEffects);
+		SetMemoryValue(memoryType, address + 3, (uint8_t)value, disableSideEffects);
+		return;
+	}
 	SetMemoryValue(memoryType, address, (uint8_t)value, disableSideEffects);
 	SetMemoryValue(memoryType, address + 1, (uint8_t)(value >> 8), disableSideEffects);
 	SetMemoryValue(memoryType, address + 2, (uint8_t)(value >> 16), disableSideEffects);

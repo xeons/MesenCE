@@ -2634,6 +2634,39 @@
     <ClInclude Include="MD\Input\MdController.h">
       <Filter>MD\Input</Filter>
     </ClInclude>
+    <ClInclude Include="MD\Debugger\MdDebugger.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdZ80Debugger.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\DummyMdCpu.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\DummyMdZ80.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdDisUtils.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdZ80DisUtils.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdTraceLogger.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdZ80TraceLogger.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdAssembler.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdEventManager.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Debugger\MdVdpTools.h">
+      <Filter>MD\Debugger</Filter>
+    </ClInclude>
     <ClInclude Include="SMS\SmsVdp.h">
       <Filter>SMS</Filter>
     </ClInclude>
@@ -3239,6 +3272,39 @@
     <ClCompile Include="MD\MdControlManager.cpp">
       <Filter>MD</Filter>
     </ClCompile>
+    <ClCompile Include="MD\Debugger\MdDebugger.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdZ80Debugger.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\DummyMdCpu.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\DummyMdZ80.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdDisUtils.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdZ80DisUtils.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdTraceLogger.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdZ80TraceLogger.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdEventManager.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\Debugger\MdVdpTools.cpp">
+      <Filter>MD\Debugger</Filter>
+    </ClCompile>
+    <ClCompile Include="Debugger\ExpressionEvaluator.Md.cpp">
+      <Filter>Debugger</Filter>
+    </ClCompile>
     <ClCompile Include="SMS\SmsVdp.cpp">
       <Filter>SMS</Filter>
     </ClCompile>
@@ -3555,6 +3621,9 @@
     </Filter>
     <Filter Include="MD\Input">
       <UniqueIdentifier>{6818b43d-ca07-40fc-9890-e745adc4730b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="MD\Debugger">
+      <UniqueIdentifier>{136ba1db-4140-42bc-8fb3-505b22647142}</UniqueIdentifier>
     </Filter>
     <Filter Include="SMS">
       <UniqueIdentifier>{418fea7a-2766-464e-a553-e0647531fca2}</UniqueIdentifier>

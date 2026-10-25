@@ -30,7 +30,110 @@ namespace Mesen.Debugger.Labels
 				SetGbaDefaultLabels();
 			} else if(cpuTypes.Contains(CpuType.Ws)) {
 				SetWsDefaultLabels();
+			} else if(cpuTypes.Contains(CpuType.Md)) {
+				SetMdDefaultLabels();
 			}
+		}
+
+		private static void SetMdDefaultLabels()
+		{
+			List<CodeLabel> labels = new();
+
+			void addLabel(uint addr, uint length, MemoryType memType, string label, string desc)
+			{
+				labels.Add(new CodeLabel() {
+					Address = addr,
+					Length = length,
+					MemoryType = memType,
+					Label = label,
+					Comment = desc
+				});
+			}
+
+			//68000 vector table
+			string[] vectorNames = new string[] {
+				"InitialSsp", "ResetVector", "BusErrorVector", "AddressErrorVector", "IllegalInstrVector", "ZeroDivideVector", "ChkVector", "TrapvVector",
+				"PrivilegeVector", "TraceVector", "LineAVector", "LineFVector"
+			};
+			for(int i = 0; i < vectorNames.Length; i++) {
+				addLabel((uint)(i * 4), 4, MemoryType.MdPrgRom, vectorNames[i], "");
+			}
+			addLabel(0x60, 4, MemoryType.MdPrgRom, "SpuriousIrqVector", "");
+			addLabel(0x64, 4, MemoryType.MdPrgRom, "Irq1Vector", "Level 1 autovector (unused)");
+			addLabel(0x68, 4, MemoryType.MdPrgRom, "ExtIrqVector", "Level 2 autovector - External interrupt (TH)");
+			addLabel(0x6C, 4, MemoryType.MdPrgRom, "Irq3Vector", "Level 3 autovector (unused)");
+			addLabel(0x70, 4, MemoryType.MdPrgRom, "HIntVector", "Level 4 autovector - Horizontal interrupt");
+			addLabel(0x74, 4, MemoryType.MdPrgRom, "Irq5Vector", "Level 5 autovector (unused)");
+			addLabel(0x78, 4, MemoryType.MdPrgRom, "VIntVector", "Level 6 autovector - Vertical interrupt");
+			addLabel(0x7C, 4, MemoryType.MdPrgRom, "Irq7Vector", "Level 7 autovector (unused)");
+			for(int i = 0; i < 16; i++) {
+				addLabel((uint)(0x80 + i * 4), 4, MemoryType.MdPrgRom, "Trap" + i.ToString("X") + "Vector", "");
+			}
+
+			//ROM header
+			addLabel(0x100, 16, MemoryType.MdPrgRom, "HeaderSystemType", "");
+			addLabel(0x110, 16, MemoryType.MdPrgRom, "HeaderCopyright", "");
+			addLabel(0x120, 48, MemoryType.MdPrgRom, "HeaderDomesticName", "");
+			addLabel(0x150, 48, MemoryType.MdPrgRom, "HeaderOverseasName", "");
+			addLabel(0x180, 14, MemoryType.MdPrgRom, "HeaderSerialNumber", "");
+			addLabel(0x18E, 2, MemoryType.MdPrgRom, "HeaderChecksum", "");
+			addLabel(0x190, 16, MemoryType.MdPrgRom, "HeaderDeviceSupport", "");
+			addLabel(0x1A0, 8, MemoryType.MdPrgRom, "HeaderRomAddressRange", "");
+			addLabel(0x1A8, 8, MemoryType.MdPrgRom, "HeaderRamAddressRange", "");
+			addLabel(0x1B0, 12, MemoryType.MdPrgRom, "HeaderExtraMemory", "");
+			addLabel(0x1BC, 12, MemoryType.MdPrgRom, "HeaderModemSupport", "");
+			addLabel(0x1F0, 3, MemoryType.MdPrgRom, "HeaderRegionSupport", "");
+
+			//68000-side registers
+			addLabel(0xA00000, 1, MemoryType.MdMemory, "Z80_RAM", "Z80 RAM (8KB, requires Z80 bus)");
+			addLabel(0xA04000, 1, MemoryType.MdMemory, "YM2612_ADDR0", "YM2612 - Address (part 1) / Status");
+			addLabel(0xA04001, 1, MemoryType.MdMemory, "YM2612_DATA0", "YM2612 - Data (part 1)");
+			addLabel(0xA04002, 1, MemoryType.MdMemory, "YM2612_ADDR1", "YM2612 - Address (part 2)");
+			addLabel(0xA04003, 1, MemoryType.MdMemory, "YM2612_DATA1", "YM2612 - Data (part 2)");
+			addLabel(0xA06000, 1, MemoryType.MdMemory, "Z80_BANK_REG", "Z80 bank register");
+			addLabel(0xA10001, 1, MemoryType.MdMemory, "IO_VERSION", "Version register");
+			addLabel(0xA10003, 1, MemoryType.MdMemory, "IO_DATA1", "Controller port 1 data");
+			addLabel(0xA10005, 1, MemoryType.MdMemory, "IO_DATA2", "Controller port 2 data");
+			addLabel(0xA10007, 1, MemoryType.MdMemory, "IO_DATA3", "Expansion port data");
+			addLabel(0xA10009, 1, MemoryType.MdMemory, "IO_CTRL1", "Controller port 1 control");
+			addLabel(0xA1000B, 1, MemoryType.MdMemory, "IO_CTRL2", "Controller port 2 control");
+			addLabel(0xA1000D, 1, MemoryType.MdMemory, "IO_CTRL3", "Expansion port control");
+			addLabel(0xA1000F, 1, MemoryType.MdMemory, "IO_TXDATA1", "Port 1 serial TX data");
+			addLabel(0xA10011, 1, MemoryType.MdMemory, "IO_RXDATA1", "Port 1 serial RX data");
+			addLabel(0xA10013, 1, MemoryType.MdMemory, "IO_SCTRL1", "Port 1 serial control");
+			addLabel(0xA10015, 1, MemoryType.MdMemory, "IO_TXDATA2", "Port 2 serial TX data");
+			addLabel(0xA10017, 1, MemoryType.MdMemory, "IO_RXDATA2", "Port 2 serial RX data");
+			addLabel(0xA10019, 1, MemoryType.MdMemory, "IO_SCTRL2", "Port 2 serial control");
+			addLabel(0xA1001B, 1, MemoryType.MdMemory, "IO_TXDATA3", "Expansion port serial TX data");
+			addLabel(0xA1001D, 1, MemoryType.MdMemory, "IO_RXDATA3", "Expansion port serial RX data");
+			addLabel(0xA1001F, 1, MemoryType.MdMemory, "IO_SCTRL3", "Expansion port serial control");
+			addLabel(0xA11000, 2, MemoryType.MdMemory, "MEMORY_MODE", "DRAM refresh mode");
+			addLabel(0xA11100, 2, MemoryType.MdMemory, "Z80_BUSREQ", "Z80 bus request");
+			addLabel(0xA11200, 2, MemoryType.MdMemory, "Z80_RESET", "Z80 reset");
+			addLabel(0xA130F1, 1, MemoryType.MdMemory, "SRAM_CTRL", "Save RAM control");
+			for(int i = 1; i < 8; i++) {
+				addLabel((uint)(0xA130F1 + i * 2), 1, MemoryType.MdMemory, "ROM_BANK" + i, "Sega mapper bank " + i);
+			}
+			addLabel(0xA14000, 4, MemoryType.MdMemory, "TMSS_SEGA", "TMSS lock register");
+			addLabel(0xA14101, 1, MemoryType.MdMemory, "TMSS_CART", "TMSS cartridge/BIOS switch");
+			addLabel(0xC00000, 4, MemoryType.MdMemory, "VDP_DATA", "VDP data port");
+			addLabel(0xC00004, 4, MemoryType.MdMemory, "VDP_CTRL", "VDP control port / status");
+			addLabel(0xC00008, 8, MemoryType.MdMemory, "VDP_HVCOUNTER", "VDP HV counter");
+			addLabel(0xC00011, 1, MemoryType.MdMemory, "PSG", "SN76489 PSG");
+			addLabel(0xC0001C, 2, MemoryType.MdMemory, "VDP_DEBUG", "VDP debug register");
+
+			//Z80-side registers
+			addLabel(0x4000, 1, MemoryType.MdZ80Memory, "Z80_YM2612_ADDR0", "YM2612 - Address (part 1) / Status");
+			addLabel(0x4001, 1, MemoryType.MdZ80Memory, "Z80_YM2612_DATA0", "YM2612 - Data (part 1)");
+			addLabel(0x4002, 1, MemoryType.MdZ80Memory, "Z80_YM2612_ADDR1", "YM2612 - Address (part 2)");
+			addLabel(0x4003, 1, MemoryType.MdZ80Memory, "Z80_YM2612_DATA1", "YM2612 - Data (part 2)");
+			addLabel(0x6000, 1, MemoryType.MdZ80Memory, "Z80_BANK", "Bank register (68000 window at $8000-$FFFF)");
+			addLabel(0x7F00, 4, MemoryType.MdZ80Memory, "Z80_VDP_DATA", "VDP data port");
+			addLabel(0x7F04, 4, MemoryType.MdZ80Memory, "Z80_VDP_CTRL", "VDP control port / status");
+			addLabel(0x7F08, 8, MemoryType.MdZ80Memory, "Z80_VDP_HVCOUNTER", "VDP HV counter");
+			addLabel(0x7F11, 1, MemoryType.MdZ80Memory, "Z80_PSG", "SN76489 PSG");
+
+			LabelManager.SetLabels(labels, false);
 		}
 
 		private static void SetSnesDefaultLabels()

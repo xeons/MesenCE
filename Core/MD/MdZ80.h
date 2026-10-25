@@ -16,7 +16,7 @@ class MdConsole;
 class MdMemoryManager;
 class SmsCpuParityTable;
 
-class MdZ80 final : public ISerializable
+class MdZ80Cpu final : public ISerializable
 {
 private:
 	static SmsCpuParityTable _parity;

@@ -21,7 +21,7 @@ MdMemoryManager::~MdMemoryManager()
 	delete[] _z80Ram;
 }
 
-void MdMemoryManager::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80* z80, MdVdp* vdp, MdCart* cart, MdPsg* psg, MdFmAudio* fmAudio, MdControlManager* controlManager)
+void MdMemoryManager::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, MdVdp* vdp, MdCart* cart, MdPsg* psg, MdFmAudio* fmAudio, MdControlManager* controlManager)
 {
 	_emu = emu;
 	_console = console;

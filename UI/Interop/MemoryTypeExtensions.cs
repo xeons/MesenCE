@@ -265,6 +265,21 @@ namespace Mesen.Interop
 			return false;
 		}
 
+		public static bool IsBigEndian(this MemoryType memType)
+		{
+			switch(memType) {
+				case MemoryType.MdMemory:
+				case MemoryType.MdPrgRom:
+				case MemoryType.MdWorkRam:
+				case MemoryType.MdSaveRam:
+				case MemoryType.MdVideoRam:
+				case MemoryType.MdColorRam:
+				case MemoryType.MdVsRam:
+					return true;
+			}
+			return false;
+		}
+
 		public static bool IsRomMemory(this MemoryType memType)
 		{
 			switch(memType) {

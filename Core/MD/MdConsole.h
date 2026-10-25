@@ -9,7 +9,7 @@ class VirtualFile;
 class BaseControlManager;
 
 class MdCpu;
-class MdZ80;
+class MdZ80Cpu;
 class MdVdp;
 class MdPsg;
 class MdFmAudio;
@@ -22,7 +22,7 @@ class MdConsole final : public IConsole
 private:
 	Emulator* _emu = nullptr;
 	unique_ptr<MdCpu> _cpu;
-	unique_ptr<MdZ80> _z80;
+	unique_ptr<MdZ80Cpu> _z80;
 	unique_ptr<MdVdp> _vdp;
 	unique_ptr<MdPsg> _psg;
 	unique_ptr<MdFmAudio> _fmAudio;
@@ -45,7 +45,7 @@ public:
 
 	Emulator* GetEmulator() { return _emu; }
 	MdCpu* GetCpu() { return _cpu.get(); }
-	MdZ80* GetZ80() { return _z80.get(); }
+	MdZ80Cpu* GetZ80() { return _z80.get(); }
 	MdVdp* GetVdp() { return _vdp.get(); }
 	MdPsg* GetPsg() { return _psg.get(); }
 	MdFmAudio* GetFmAudio() { return _fmAudio.get(); }

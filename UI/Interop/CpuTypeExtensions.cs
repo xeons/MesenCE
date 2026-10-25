@@ -36,7 +36,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.SmsVideoRam,
 				CpuType.Gba => MemoryType.GbaVideoRam,
 				CpuType.Ws => MemoryType.WsWorkRam,
-				CpuType.Md => MemoryType.MdVideoRam,
+				CpuType.Md or CpuType.MdZ80 => MemoryType.MdVideoRam,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -51,7 +51,7 @@ namespace Mesen.Interop
 				CpuType.Sms => MemoryType.None,
 				CpuType.Gba => MemoryType.GbaSpriteRam,
 				CpuType.Ws => MemoryType.None,
-				CpuType.Md => MemoryType.None,
+				CpuType.Md or CpuType.MdZ80 => MemoryType.None,
 				_ => throw new Exception("Invalid CPU type"),
 			};
 		}
@@ -219,6 +219,7 @@ namespace Mesen.Interop
 				case CpuType.Nes:
 				case CpuType.Pce:
 				case CpuType.Sms:
+				case CpuType.MdZ80:
 					return true;
 
 				default:
@@ -237,6 +238,8 @@ namespace Mesen.Interop
 				case CpuType.Sms:
 				case CpuType.Gba:
 				case CpuType.Ws:
+				case CpuType.Md:
+				case CpuType.MdZ80:
 					return true;
 
 				default:
@@ -252,6 +255,8 @@ namespace Mesen.Interop
 				case CpuType.Pce:
 				case CpuType.Sms:
 				case CpuType.Ws:
+				case CpuType.Md:
+				case CpuType.MdZ80:
 					return true;
 
 				default:

@@ -42,7 +42,8 @@ namespace Mesen.Debugger.ViewModels
 			ControllerIndex = index + 1;
 			IsSnes = consoleType == ConsoleType.Snes;
 			IsWs = consoleType == ConsoleType.Ws;
-			HasShoulderButtons = consoleType == ConsoleType.Snes || consoleType == ConsoleType.Gba;
+			//Mega Drive: L/R are the 6-button pad's Y/Z buttons
+			HasShoulderButtons = consoleType == ConsoleType.Snes || consoleType == ConsoleType.Gba || consoleType == ConsoleType.MegaDrive;
 			HasSelectButton = consoleType != ConsoleType.Sms;
 			HasStartButton = consoleType != ConsoleType.Sms || index == 0;
 			ViewHeight = consoleType != ConsoleType.Ws ? (HasShoulderButtons ? 34 : 30) : 64;

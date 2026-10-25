@@ -235,26 +235,18 @@ namespace Mesen.Debugger.Utilities
 				int wordValue;
 				int dwordValue;
 				if(useAbsAddress && absAddress != null) {
-					wordValue = (DebugApi.GetMemoryValue(absAddress.Value.Type, (uint)absAddress.Value.Address + 1) << 8) | byteValue;
-					dwordValue = (
-						(DebugApi.GetMemoryValue(absAddress.Value.Type, (uint)absAddress.Value.Address + 3) << 24) |
-						(DebugApi.GetMemoryValue(absAddress.Value.Type, (uint)absAddress.Value.Address + 2) << 16) |
-						wordValue
-					);
+					wordValue = ReadMultiByteValue(absAddress.Value.Type, (uint)absAddress.Value.Address, 2);
+					dwordValue = ReadMultiByteValue(absAddress.Value.Type, (uint)absAddress.Value.Address, 4);
 				} else {
-					wordValue = (DebugApi.GetMemoryValue(cpuMemType, (uint)relAddress + 1) << 8) | byteValue;
-					dwordValue = (
-						(DebugApi.GetMemoryValue(cpuMemType, (uint)relAddress + 3) << 24) |
-						(DebugApi.GetMemoryValue(cpuMemType, (uint)relAddress + 2) << 16) |
-						wordValue
-					);
+					wordValue = ReadMultiByteValue(cpuMemType, (uint)relAddress, 2);
+					dwordValue = ReadMultiByteValue(cpuMemType, (uint)relAddress, 4);
 				}
 
 				StackPanel mainPanel = new StackPanel() { Spacing = -4, Margin = new Avalonia.Thickness(0, -1, 0, 0) };
 				mainPanel.Children.Add(GetHexDecPanel(byteValue, "X2", monoFont, fontSize));
 				mainPanel.Children.Add(GetHexDecPanel(wordValue, "X4", monoFont, fontSize));
-				if(cpuType.GetConsoleType() == ConsoleType.Gba || cpuType.GetConsoleType() == ConsoleType.Snes) {
-					//Only show 32-bit values for GBA/SNES since these are the 2 systems that are most likely to be using 32-bit values in memory
+				if(cpuType.GetConsoleType() == ConsoleType.Gba || cpuType.GetConsoleType() == ConsoleType.Snes || cpuType == CpuType.Md) {
+					//Only show 32-bit values for GBA/SNES/68000 since these are the systems that are most likely to be using 32-bit values in memory
 					mainPanel.Children.Add(GetHexDecPanel(dwordValue, "X8", monoFont, fontSize));
 				}
 
@@ -279,7 +271,7 @@ namespace Mesen.Debugger.Utilities
 					items.AddEntry("Constant", "$" + codeLoc.Symbol.Value.Address.Value.ToString("X" + cpuType.GetAddressSize()));
 				} else {
 					int byteValue = DebugApi.GetMemoryValue(symbolAddr.Value.Type, (uint)symbolAddr.Value.Address);
-					int wordValue = (DebugApi.GetMemoryValue(symbolAddr.Value.Type, (uint)symbolAddr.Value.Address + 1) << 8) | byteValue;
+					int wordValue = ReadMultiByteValue(symbolAddr.Value.Type, (uint)symbolAddr.Value.Address, 2);
 
 					StackPanel mainPanel = new StackPanel() { Spacing = -4 };
 					mainPanel.Children.Add(GetHexDecPanel(byteValue, "X2", monoFont, ConfigManager.Config.Debug.Fonts.OtherMonoFont.FontSize));
@@ -341,6 +333,17 @@ namespace Mesen.Debugger.Utilities
 				panel.Children.Add(new TextBlock() { Text = "$" + absAddr.Value.Address.ToString("X" + cpuType.GetAddressSize()) + " (" + absAddr.Value.Type.GetShortName() + ")", FontFamily = font, FontSize = fontSize });
 			}
 			return panel;
+		}
+
+		private static int ReadMultiByteValue(MemoryType memType, uint address, int size)
+		{
+			int value = 0;
+			bool bigEndian = memType.IsBigEndian();
+			for(int i = 0; i < size; i++) {
+				int b = DebugApi.GetMemoryValue(memType, (uint)(address + i));
+				value |= b << ((bigEndian ? (size - 1 - i) : i) * 8);
+			}
+			return value;
 		}
 
 		private static StackPanel GetHexDecPanel(int value, string format, FontFamily font, double fontSize)

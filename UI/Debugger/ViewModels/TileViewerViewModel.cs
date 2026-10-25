@@ -311,6 +311,7 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.Sms => new Enum[] { TileFormat.SmsBpp4, TileFormat.SmsSgBpp1 },
 				CpuType.Gba => new Enum[] { TileFormat.GbaBpp4, TileFormat.GbaBpp8 },
 				CpuType.Ws => new Enum[] { TileFormat.Bpp2, TileFormat.SmsBpp4, TileFormat.WsBpp4Packed },
+				CpuType.Md => new Enum[] { TileFormat.WsBpp4Packed },
 				_ => throw new Exception("Unsupported CPU type")
 			};
 
@@ -867,6 +868,12 @@ namespace Mesen.Debugger.ViewModels
 						CreatePreset(1, "Bank 1", () => ApplyBgPreset(1)),
 					};
 
+				case CpuType.Md:
+					return new() {
+						CreatePreset(0, "VDP", () => ApplyPpuPreset()),
+						CreatePreset(0, "ROM", () => ApplyPrgPreset())
+					};
+
 				default:
 					throw new Exception("Unsupported CPU type");
 			}
@@ -980,6 +987,19 @@ namespace Mesen.Debugger.ViewModels
 					preset.RowCount = 128;
 					preset.Layout = TileLayout.Normal;
 					preset.Format = ppu.Mode.ToTileFormat();
+					break;
+				}
+
+				case CpuType.Md: {
+					preset.Source = MemoryType.MdVideoRam;
+					preset.StartAddress = 0;
+					preset.ColumnCount = 16;
+					preset.RowCount = 128;
+					preset.Layout = TileLayout.Normal;
+					preset.Format = TileFormat.WsBpp4Packed;
+					if(SelectedPalette >= 4) {
+						preset.SelectedPalette = 0;
+					}
 					break;
 				}
 			}

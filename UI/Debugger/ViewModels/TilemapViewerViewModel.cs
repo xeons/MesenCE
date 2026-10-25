@@ -404,6 +404,14 @@ namespace Mesen.Debugger.ViewModels
 					};
 					break;
 
+				case CpuType.Md:
+					Tabs = new() {
+						new() { Title = "Plane A", Layer = 0 },
+						new() { Title = "Plane B", Layer = 1 },
+						new() { Title = "Window", Layer = 2 }
+					};
+					break;
+
 				default:
 					throw new Exception("unsupported cpu type");
 			}

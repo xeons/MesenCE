@@ -105,6 +105,7 @@ namespace Mesen.Config
 			Add(new() { Shortcut = DebuggerShortcut.OpenNecDspDebugger, KeyBinding = new() });
 			Add(new() { Shortcut = DebuggerShortcut.OpenCx4Debugger, KeyBinding = new() });
 			Add(new() { Shortcut = DebuggerShortcut.OpenGameboyDebugger, KeyBinding = new() });
+			Add(new() { Shortcut = DebuggerShortcut.OpenMdZ80Debugger, KeyBinding = new(KeyModifiers.Control, Key.F) });
 			Add(new() { Shortcut = DebuggerShortcut.OpenEventViewer, KeyBinding = new(KeyModifiers.Control, Key.E) });
 			Add(new() { Shortcut = DebuggerShortcut.OpenMemoryTools, KeyBinding = new(KeyModifiers.Control, Key.M) });
 			Add(new() { Shortcut = DebuggerShortcut.OpenProfiler, KeyBinding = new(KeyModifiers.Control, Key.Y) });
@@ -323,6 +324,7 @@ namespace Mesen.Config
 		OpenNecDspDebugger,
 		OpenCx4Debugger,
 		OpenGameboyDebugger,
+		OpenMdZ80Debugger,
 		OpenEventViewer,
 		OpenMemoryTools,
 		OpenProfiler,

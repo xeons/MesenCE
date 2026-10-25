@@ -46,7 +46,7 @@ LoadRomResult MdConsole::LoadRom(VirtualFile& romFile)
 	_cart.reset(new MdCart(_emu, this, romData));
 	_memoryManager.reset(new MdMemoryManager());
 	_cpu.reset(new MdCpu());
-	_z80.reset(new MdZ80());
+	_z80.reset(new MdZ80Cpu());
 	_vdp.reset(new MdVdp());
 	_psg.reset(new MdPsg(_emu, this));
 	_fmAudio.reset(new MdFmAudio(_emu, this));

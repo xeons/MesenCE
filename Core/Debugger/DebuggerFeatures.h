@@ -6,7 +6,8 @@ enum class VectorType
 	Indirect,
 	Direct,
 	x86,
-	x86WithOffset
+	x86WithOffset,
+	IndirectBigEndian32
 };
 
 struct CpuVectorDefinition

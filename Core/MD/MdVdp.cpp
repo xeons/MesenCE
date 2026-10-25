@@ -96,7 +96,7 @@ void MdVdp::InitTimings()
 	_timingsInitialized = true;
 }
 
-void MdVdp::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80* z80, MdMemoryManager* memoryManager)
+void MdVdp::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, MdMemoryManager* memoryManager)
 {
 	_emu = emu;
 	_console = console;
@@ -862,6 +862,19 @@ uint16_t MdVdp::GetHvCounter()
 uint16_t MdVdp::GetScanlineCount()
 {
 	return _totalLines;
+}
+
+uint16_t MdVdp::GetActiveDisplayStartClock()
+{
+	//Position (in MCLK, relative to the start of the line) of the first active display pixel
+	const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
+	uint16_t pixel = (timing.ActiveStart + timing.PixelCount - timing.VCounterChangePixel) % timing.PixelCount;
+	for(uint16_t i = 0; i < MdConstants::ClocksPerScanline; i++) {
+		if(timing.PixelAtClock[i] == pixel) {
+			return i;
+		}
+	}
+	return 0;
 }
 
 uint32_t MdVdp::GetScreenWidth()

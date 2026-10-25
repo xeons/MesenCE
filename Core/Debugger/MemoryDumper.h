@@ -15,6 +15,7 @@ class PceConsole;
 class SmsConsole;
 class GbaConsole;
 class WsConsole;
+class MdConsole;
 class Emulator;
 class Debugger;
 
@@ -42,6 +43,7 @@ private:
 	SmsConsole* _smsConsole = nullptr;
 	GbaConsole* _gbaConsole = nullptr;
 	WsConsole* _wsConsole = nullptr;
+	MdConsole* _mdConsole = nullptr;
 	BaseCartridge* _cartridge = nullptr;
 	Debugger* _debugger = nullptr;
 	bool _isMemorySupported[DebugUtilities::GetMemoryTypeCount()] = {};
@@ -51,6 +53,8 @@ private:
 
 	uint8_t InternalGetMemoryValue(MemoryType memoryType, uint32_t address, bool disableSideEffects = true);
 	void InternalSetMemoryValues(MemoryType memoryType, uint32_t startAddress, uint8_t* data, uint32_t length, bool disableSideEffects, bool undoAllowed);
+
+	static bool IsBigEndian(MemoryType memoryType);
 
 public:
 	MemoryDumper(Debugger* debugger);

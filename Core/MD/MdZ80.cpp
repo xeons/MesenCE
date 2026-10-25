@@ -8,9 +8,9 @@
 #include "Shared/EventType.h"
 #include "Utilities/Serializer.h"
 
-SmsCpuParityTable MdZ80::_parity = {};
+SmsCpuParityTable MdZ80Cpu::_parity = {};
 
-void MdZ80::Init(Emulator* emu, MdConsole* console, MdMemoryManager* memoryManager)
+void MdZ80Cpu::Init(Emulator* emu, MdConsole* console, MdMemoryManager* memoryManager)
 {
 	_emu = emu;
 	_console = console;
@@ -23,7 +23,7 @@ void MdZ80::Init(Emulator* emu, MdConsole* console, MdMemoryManager* memoryManag
 	_state.Reset = true;
 }
 
-void MdZ80::ResetCpu()
+void MdZ80Cpu::ResetCpu()
 {
 	_state.PC = 0;
 	_state.SP = 0xFFFF;
@@ -39,12 +39,12 @@ void MdZ80::ResetCpu()
 	_state.FlagsChanged = 0;
 }
 
-void MdZ80::SetBusRequest(bool requested)
+void MdZ80Cpu::SetBusRequest(bool requested)
 {
 	_state.BusRequested = requested;
 }
 
-void MdZ80::SetReset(bool reset)
+void MdZ80Cpu::SetReset(bool reset)
 {
 	if(reset && !_state.Reset) {
 		ResetCpu();
@@ -52,19 +52,19 @@ void MdZ80::SetReset(bool reset)
 	_state.Reset = reset;
 }
 
-void MdZ80::WriteBankRegister(uint8_t value)
+void MdZ80Cpu::WriteBankRegister(uint8_t value)
 {
 	//Each write shifts bit 0 into bit 8 of the 9-bit bank register
 	_state.BankRegister = ((_state.BankRegister >> 1) | ((value & 0x01) << 8)) & 0x1FF;
 	_state.BankShiftCount = (_state.BankShiftCount + 1) % 9;
 }
 
-MdZ80State& MdZ80::GetState()
+MdZ80State& MdZ80Cpu::GetState()
 {
 	return _state;
 }
 
-void MdZ80::Exec()
+void MdZ80Cpu::Exec()
 {
 	uint8_t opCode = 0;
 	_state.FlagsChanged <<= 1;
@@ -133,7 +133,7 @@ void MdZ80::Exec()
 }
 
 template<uint8_t prefix>
-void MdZ80::ExecOpCode(uint8_t opCode)
+void MdZ80Cpu::ExecOpCode(uint8_t opCode)
 {
 	auto getHl = [this]() constexpr -> Register16& {
 		switch(prefix) {
@@ -444,7 +444,7 @@ void MdZ80::ExecOpCode(uint8_t opCode)
 	}
 }
 
-void MdZ80::PREFIX_ED()
+void MdZ80Cpu::PREFIX_ED()
 {
 	switch(ReadNextOpCode()) {
 		case 0x40: IN(_state.B, _state.C); break;
@@ -537,7 +537,7 @@ void MdZ80::PREFIX_ED()
 	}
 }
 
-void MdZ80::EXX()
+void MdZ80Cpu::EXX()
 {
 	std::swap(_state.B, _state.AltB);
 	std::swap(_state.C, _state.AltC);
@@ -547,13 +547,13 @@ void MdZ80::EXX()
 	std::swap(_state.L, _state.AltL);
 }
 
-void MdZ80::ExchangeAf()
+void MdZ80Cpu::ExchangeAf()
 {
 	std::swap(_state.A, _state.AltA);
 	std::swap(_state.Flags, _state.AltFlags);
 }
 
-void MdZ80::ExchangeSp(Register16& reg)
+void MdZ80Cpu::ExchangeSp(Register16& reg)
 {
 	uint8_t lo = Read(_state.SP);
 	uint8_t hi = Read(_state.SP + 1);
@@ -570,13 +570,13 @@ void MdZ80::ExchangeSp(Register16& reg)
 	ExecCycles(2);
 }
 
-void MdZ80::ExchangeDeHl()
+void MdZ80Cpu::ExchangeDeHl()
 {
 	std::swap(_state.D, _state.H);
 	std::swap(_state.E, _state.L);
 }
 
-void MdZ80::DJNZ()
+void MdZ80Cpu::DJNZ()
 {
 	ExecCycles(1);
 	int8_t offset = ReadCode();
@@ -588,7 +588,7 @@ void MdZ80::DJNZ()
 	}
 }
 
-void MdZ80::NEG()
+void MdZ80Cpu::NEG()
 {
 	uint8_t originalValue = _state.A;
 	uint8_t newValue = (uint8_t)-_state.A;
@@ -600,7 +600,7 @@ void MdZ80::NEG()
 	SetFlagState(SmsCpuFlags::HalfCarry, (originalValue ^ _state.A) & 0x10);
 }
 
-void MdZ80::RRD()
+void MdZ80Cpu::RRD()
 {
 	_state.WZ = _regHL + 1;
 	uint8_t value = Read(_regHL);
@@ -619,7 +619,7 @@ void MdZ80::RRD()
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RLD()
+void MdZ80Cpu::RLD()
 {
 	_state.WZ = _regHL + 1;
 	uint8_t value = Read(_regHL);
@@ -637,7 +637,7 @@ void MdZ80::RLD()
 }
 
 template<bool forInc>
-void MdZ80::CPD()
+void MdZ80Cpu::CPD()
 {
 	uint8_t value = Read(_regHL);
 
@@ -664,7 +664,7 @@ void MdZ80::CPD()
 	SetFlagState(SmsCpuFlags::Parity, _regBC != 0);
 }
 
-void MdZ80::CPDR()
+void MdZ80Cpu::CPDR()
 {
 	CPD<false>();
 	if(_regBC != 0 && !CheckFlag(SmsCpuFlags::Zero)) {
@@ -675,12 +675,12 @@ void MdZ80::CPDR()
 	}
 }
 
-void MdZ80::CPI()
+void MdZ80Cpu::CPI()
 {
 	CPD<true>();
 }
 
-void MdZ80::CPIR()
+void MdZ80Cpu::CPIR()
 {
 	CPI();
 	if(_regBC != 0 && !CheckFlag(SmsCpuFlags::Zero)) {
@@ -692,7 +692,7 @@ void MdZ80::CPIR()
 }
 
 template<bool forInc>
-void MdZ80::LDD()
+void MdZ80Cpu::LDD()
 {
 	uint8_t val = Read(_regHL);
 	Write(_regDE, val);
@@ -717,7 +717,7 @@ void MdZ80::LDD()
 	SetFlagState(SmsCpuFlags::F5, flagVal & 0x02);
 }
 
-void MdZ80::LDDR()
+void MdZ80Cpu::LDDR()
 {
 	LDD();
 	if(_regBC != 0) {
@@ -728,12 +728,12 @@ void MdZ80::LDDR()
 	}
 }
 
-void MdZ80::LDI()
+void MdZ80Cpu::LDI()
 {
 	LDD<true>();
 }
 
-void MdZ80::LDIR()
+void MdZ80Cpu::LDIR()
 {
 	LDI();
 	if(_regBC != 0) {
@@ -744,24 +744,24 @@ void MdZ80::LDIR()
 	}
 }
 
-void MdZ80::OUT(uint8_t src, uint8_t port)
+void MdZ80Cpu::OUT(uint8_t src, uint8_t port)
 {
 	WritePort(port, src);
 	_state.WZ = _regBC + 1;
 }
 
-void MdZ80::OUT_Imm(uint8_t port)
+void MdZ80Cpu::OUT_Imm(uint8_t port)
 {
 	WritePort(port, _state.A);
 	_state.WZ = (_state.A << 8) + ((port + 1) & 0xFF);
 }
 
-void MdZ80::IN(uint8_t& dst, uint8_t port)
+void MdZ80Cpu::IN(uint8_t& dst, uint8_t port)
 {
 	dst = IN(port);
 }
 
-uint8_t MdZ80::IN(uint8_t port)
+uint8_t MdZ80Cpu::IN(uint8_t port)
 {
 	uint8_t val = ReadPort(port);
 	SetStandardFlags<0xEC>(val);
@@ -771,7 +771,7 @@ uint8_t MdZ80::IN(uint8_t port)
 	return val;
 }
 
-void MdZ80::IN_Imm(uint8_t port)
+void MdZ80Cpu::IN_Imm(uint8_t port)
 {
 	//IN A, (n) doesn't update flags
 	_state.WZ = (_state.A << 8) + port + 1;
@@ -779,7 +779,7 @@ void MdZ80::IN_Imm(uint8_t port)
 }
 
 template<bool forInc>
-void MdZ80::OUTD()
+void MdZ80Cpu::OUTD()
 {
 	ExecCycles(1);
 	_state.B--;
@@ -799,7 +799,7 @@ void MdZ80::OUTD()
 	WritePort(_state.C, val);
 }
 
-void MdZ80::OTDR()
+void MdZ80Cpu::OTDR()
 {
 	OUTD<false>();
 	if(_state.B != 0) {
@@ -809,12 +809,12 @@ void MdZ80::OTDR()
 	}
 }
 
-void MdZ80::OUTI()
+void MdZ80Cpu::OUTI()
 {
 	OUTD<true>();
 }
 
-void MdZ80::OTIR()
+void MdZ80Cpu::OTIR()
 {
 	OUTD<true>();
 	if(_state.B != 0) {
@@ -825,7 +825,7 @@ void MdZ80::OTIR()
 }
 
 template<bool forInc>
-void MdZ80::IND()
+void MdZ80Cpu::IND()
 {
 	ExecCycles(1);
 
@@ -846,7 +846,7 @@ void MdZ80::IND()
 	}
 }
 
-void MdZ80::INDR()
+void MdZ80Cpu::INDR()
 {
 	IND<false>();
 	if(_state.B != 0) {
@@ -856,12 +856,12 @@ void MdZ80::INDR()
 	}
 }
 
-void MdZ80::INI()
+void MdZ80Cpu::INI()
 {
 	IND<true>();
 }
 
-void MdZ80::INIR()
+void MdZ80Cpu::INIR()
 {
 	IND<true>();
 	if(_state.B != 0) {
@@ -871,7 +871,7 @@ void MdZ80::INIR()
 	}
 }
 
-void MdZ80::UpdateInOutRepeatFlags()
+void MdZ80Cpu::UpdateInOutRepeatFlags()
 {
 	SetStandardFlags<0x28>(_state.PC >> 8);
 	if(CheckFlag(SmsCpuFlags::Carry)) {
@@ -887,18 +887,18 @@ void MdZ80::UpdateInOutRepeatFlags()
 	}
 }
 
-void MdZ80::IncrementR()
+void MdZ80Cpu::IncrementR()
 {
 	_state.R = (_state.R & 0x80) | ((_state.R + 1) & 0x7F);
 }
 
-void MdZ80::ExecCycles(uint8_t cycles)
+void MdZ80Cpu::ExecCycles(uint8_t cycles)
 {
 	_state.CycleCount += cycles;
 	_state.MasterClock += cycles * MdConstants::Z80Divider;
 }
 
-uint8_t MdZ80::ReadOpCode()
+uint8_t MdZ80Cpu::ReadOpCode()
 {
 	ExecCycles(4);
 	IncrementR();
@@ -907,7 +907,7 @@ uint8_t MdZ80::ReadOpCode()
 	return value;
 }
 
-uint8_t MdZ80::ReadNextOpCode()
+uint8_t MdZ80Cpu::ReadNextOpCode()
 {
 	ExecCycles(4);
 	IncrementR();
@@ -916,7 +916,7 @@ uint8_t MdZ80::ReadNextOpCode()
 	return value;
 }
 
-uint8_t MdZ80::ReadCode()
+uint8_t MdZ80Cpu::ReadCode()
 {
 	ExecCycles(3);
 	uint8_t value = ReadMemory<MemoryOperationType::ExecOperand>(_state.PC);
@@ -924,21 +924,21 @@ uint8_t MdZ80::ReadCode()
 	return value;
 }
 
-uint16_t MdZ80::ReadCodeWord()
+uint16_t MdZ80Cpu::ReadCodeWord()
 {
 	uint8_t low = ReadCode();
 	uint8_t high = ReadCode();
 	return (high << 8) | low;
 }
 
-uint8_t MdZ80::Read(uint16_t addr)
+uint8_t MdZ80Cpu::Read(uint16_t addr)
 {
 	ExecCycles(3);
 	return ReadMemory<MemoryOperationType::Read>(addr);
 }
 
 template<MemoryOperationType type>
-uint8_t MdZ80::ReadMemory(uint16_t addr)
+uint8_t MdZ80Cpu::ReadMemory(uint16_t addr)
 {
 #ifdef DUMMYCPU
 	uint8_t value = _memoryManager->DebugReadZ80(addr);
@@ -949,7 +949,7 @@ uint8_t MdZ80::ReadMemory(uint16_t addr)
 #endif
 }
 
-void MdZ80::Write(uint16_t addr, uint8_t value)
+void MdZ80Cpu::Write(uint16_t addr, uint8_t value)
 {
 	ExecCycles(3);
 
@@ -960,7 +960,7 @@ void MdZ80::Write(uint16_t addr, uint8_t value)
 #endif
 }
 
-uint8_t MdZ80::ReadPort(uint8_t port)
+uint8_t MdZ80Cpu::ReadPort(uint8_t port)
 {
 	ExecCycles(4);
 #ifdef DUMMYCPU
@@ -972,7 +972,7 @@ uint8_t MdZ80::ReadPort(uint8_t port)
 #endif
 }
 
-void MdZ80::WritePort(uint8_t port, uint8_t value)
+void MdZ80Cpu::WritePort(uint8_t port, uint8_t value)
 {
 	ExecCycles(4);
 #ifdef DUMMYCPU
@@ -983,7 +983,7 @@ void MdZ80::WritePort(uint8_t port, uint8_t value)
 }
 
 template<uint8_t mask>
-void MdZ80::SetStandardFlags(uint8_t value)
+void MdZ80Cpu::SetStandardFlags(uint8_t value)
 {
 	if constexpr((mask & SmsCpuFlags::Sign) != 0) {
 		SetFlagState(SmsCpuFlags::Sign, value & 0x80);
@@ -1002,24 +1002,24 @@ void MdZ80::SetStandardFlags(uint8_t value)
 	}
 }
 
-bool MdZ80::CheckFlag(uint8_t flag)
+bool MdZ80Cpu::CheckFlag(uint8_t flag)
 {
 	return (_state.Flags & flag) != 0;
 }
 
-void MdZ80::SetFlag(uint8_t flag)
+void MdZ80Cpu::SetFlag(uint8_t flag)
 {
 	_state.Flags |= flag;
 	_state.FlagsChanged |= 0x01;
 }
 
-void MdZ80::ClearFlag(uint8_t flag)
+void MdZ80Cpu::ClearFlag(uint8_t flag)
 {
 	_state.Flags &= ~flag;
 	_state.FlagsChanged |= 0x01;
 }
 
-void MdZ80::SetFlagState(uint8_t flag, bool state)
+void MdZ80Cpu::SetFlagState(uint8_t flag, bool state)
 {
 	if(state) {
 		SetFlag(flag);
@@ -1028,19 +1028,19 @@ void MdZ80::SetFlagState(uint8_t flag, bool state)
 	}
 }
 
-void MdZ80::PushByte(uint8_t value)
+void MdZ80Cpu::PushByte(uint8_t value)
 {
 	_state.SP--;
 	Write(_state.SP, value);
 }
 
-void MdZ80::PushWord(uint16_t value)
+void MdZ80Cpu::PushWord(uint16_t value)
 {
 	PushByte(value >> 8);
 	PushByte((uint8_t)value);
 }
 
-uint16_t MdZ80::PopWord()
+uint16_t MdZ80Cpu::PopWord()
 {
 	uint8_t low = Read(_state.SP);
 	_state.SP++;
@@ -1049,12 +1049,12 @@ uint16_t MdZ80::PopWord()
 	return (high << 8) | low;
 }
 
-void MdZ80::LD(uint8_t& dst, uint8_t value)
+void MdZ80Cpu::LD(uint8_t& dst, uint8_t value)
 {
 	dst = value;
 }
 
-void MdZ80::LD_IR(uint8_t& dst, uint8_t value)
+void MdZ80Cpu::LD_IR(uint8_t& dst, uint8_t value)
 {
 	dst = value;
 
@@ -1065,56 +1065,56 @@ void MdZ80::LD_IR(uint8_t& dst, uint8_t value)
 	ExecCycles(1);
 }
 
-void MdZ80::LD(uint16_t& dst, uint16_t value)
+void MdZ80Cpu::LD(uint16_t& dst, uint16_t value)
 {
 	dst = value;
 }
 
-void MdZ80::LD(Register16& dst, uint16_t value)
+void MdZ80Cpu::LD(Register16& dst, uint16_t value)
 {
 	dst.Write(value);
 }
 
-void MdZ80::LD_Indirect(uint16_t dst, uint8_t value)
+void MdZ80Cpu::LD_Indirect(uint16_t dst, uint8_t value)
 {
 	Write(dst, value);
 }
 
-void MdZ80::LDA_Address(uint16_t addr)
+void MdZ80Cpu::LDA_Address(uint16_t addr)
 {
 	uint8_t value = Read(addr);
 	_state.A = value;
 	_state.WZ = addr + 1;
 }
 
-void MdZ80::LD_Indirect_A(uint16_t dst)
+void MdZ80Cpu::LD_Indirect_A(uint16_t dst)
 {
 	Write(dst, _state.A);
 	_state.WZ = (_state.A << 8) | ((dst + 1) & 0xFF);
 }
 
-void MdZ80::LD_IndirectImm(uint16_t dst)
+void MdZ80Cpu::LD_IndirectImm(uint16_t dst)
 {
 	uint8_t val = ReadCode();
 	ExecCycles(2);
 	Write(dst, val);
 }
 
-void MdZ80::LD_Indirect16(uint16_t dst, uint16_t value)
+void MdZ80Cpu::LD_Indirect16(uint16_t dst, uint16_t value)
 {
 	Write(dst, (uint8_t)value);
 	Write(dst + 1, value >> 8);
 	_state.WZ = dst + 1;
 }
 
-void MdZ80::LDReg_Indirect16(uint16_t& dst, uint16_t addr)
+void MdZ80Cpu::LDReg_Indirect16(uint16_t& dst, uint16_t addr)
 {
 	uint8_t lo = Read(addr);
 	uint8_t hi = Read(addr + 1);
 	dst = lo | (hi << 8);
 }
 
-void MdZ80::LDReg_Indirect16(Register16& dst, uint16_t addr)
+void MdZ80Cpu::LDReg_Indirect16(Register16& dst, uint16_t addr)
 {
 	uint8_t lo = Read(addr);
 	uint8_t hi = Read(addr + 1);
@@ -1122,7 +1122,7 @@ void MdZ80::LDReg_Indirect16(Register16& dst, uint16_t addr)
 	_state.WZ = addr + 1;
 }
 
-void MdZ80::INC(uint8_t& dst)
+void MdZ80Cpu::INC(uint8_t& dst)
 {
 	SetFlagState(SmsCpuFlags::HalfCarry, ((dst ^ 1 ^ (dst + 1)) & 0x10) != 0);
 	dst++;
@@ -1132,27 +1132,27 @@ void MdZ80::INC(uint8_t& dst)
 	SetStandardFlags<0xF8>(dst);
 }
 
-void MdZ80::INC(Register16& dst)
+void MdZ80Cpu::INC(Register16& dst)
 {
 	//16-bit inc does not alter flags
 	ExecCycles(2);
 	dst.Inc();
 }
 
-void MdZ80::INC_SP()
+void MdZ80Cpu::INC_SP()
 {
 	ExecCycles(2);
 	_state.SP++;
 }
 
-void MdZ80::INC_Indirect(uint16_t addr)
+void MdZ80Cpu::INC_Indirect(uint16_t addr)
 {
 	uint8_t val = Read(addr);
 	INC(val);
 	Write(addr, val);
 }
 
-void MdZ80::DEC(uint8_t& dst)
+void MdZ80Cpu::DEC(uint8_t& dst)
 {
 	SetFlagState(SmsCpuFlags::HalfCarry, (dst & 0x0F) == 0x00);
 	dst--;
@@ -1162,27 +1162,27 @@ void MdZ80::DEC(uint8_t& dst)
 	SetStandardFlags<0xF8>(dst);
 }
 
-void MdZ80::DEC(Register16& dst)
+void MdZ80Cpu::DEC(Register16& dst)
 {
 	//16-bit dec does not alter flags
 	ExecCycles(2);
 	dst.Dec();
 }
 
-void MdZ80::DEC_Indirect(uint16_t addr)
+void MdZ80Cpu::DEC_Indirect(uint16_t addr)
 {
 	uint8_t val = Read(addr);
 	DEC(val);
 	Write(addr, val);
 }
 
-void MdZ80::DEC_SP()
+void MdZ80Cpu::DEC_SP()
 {
 	_state.SP--;
 	ExecCycles(2);
 }
 
-void MdZ80::ADD(uint8_t value)
+void MdZ80Cpu::ADD(uint8_t value)
 {
 	int result = _state.A + value;
 
@@ -1196,7 +1196,7 @@ void MdZ80::ADD(uint8_t value)
 	SetStandardFlags<0xE8>(result);
 }
 
-void MdZ80::ADD(Register16& reg, uint16_t value)
+void MdZ80Cpu::ADD(Register16& reg, uint16_t value)
 {
 	_state.WZ = reg + 1;
 
@@ -1213,7 +1213,7 @@ void MdZ80::ADD(Register16& reg, uint16_t value)
 	ExecCycles(7);
 }
 
-void MdZ80::ADC(uint8_t value)
+void MdZ80Cpu::ADC(uint8_t value)
 {
 	uint8_t carry = (_state.Flags & SmsCpuFlags::Carry);
 	int result = _state.A + value + carry;
@@ -1228,7 +1228,7 @@ void MdZ80::ADC(uint8_t value)
 	SetStandardFlags<0xE8>(result);
 }
 
-void MdZ80::ADC16(uint16_t value)
+void MdZ80Cpu::ADC16(uint16_t value)
 {
 	_state.WZ = _regHL + 1;
 	uint8_t carry = (_state.Flags & SmsCpuFlags::Carry);
@@ -1247,7 +1247,7 @@ void MdZ80::ADC16(uint16_t value)
 	ExecCycles(7);
 }
 
-void MdZ80::SUB(uint8_t value)
+void MdZ80Cpu::SUB(uint8_t value)
 {
 	int result = (int)_state.A - value;
 
@@ -1261,7 +1261,7 @@ void MdZ80::SUB(uint8_t value)
 	SetStandardFlags<0xE8>(result);
 }
 
-void MdZ80::SBC(uint8_t value)
+void MdZ80Cpu::SBC(uint8_t value)
 {
 	uint8_t carry = (_state.Flags & SmsCpuFlags::Carry);
 	int result = (int)_state.A - value - carry;
@@ -1276,7 +1276,7 @@ void MdZ80::SBC(uint8_t value)
 	SetStandardFlags<0xE8>(result);
 }
 
-void MdZ80::SBC16(uint16_t value)
+void MdZ80Cpu::SBC16(uint16_t value)
 {
 	_state.WZ = _regHL + 1;
 	uint8_t carry = (_state.Flags & SmsCpuFlags::Carry);
@@ -1295,26 +1295,26 @@ void MdZ80::SBC16(uint16_t value)
 	ExecCycles(7);
 }
 
-void MdZ80::AND(uint8_t value)
+void MdZ80Cpu::AND(uint8_t value)
 {
 	_state.A &= value;
 	UpdateLogicalOpFlags(_state.A);
 	SetFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::OR(uint8_t value)
+void MdZ80Cpu::OR(uint8_t value)
 {
 	_state.A |= value;
 	UpdateLogicalOpFlags(_state.A);
 }
 
-void MdZ80::XOR(uint8_t value)
+void MdZ80Cpu::XOR(uint8_t value)
 {
 	_state.A ^= value;
 	UpdateLogicalOpFlags(_state.A);
 }
 
-void MdZ80::UpdateLogicalOpFlags(uint8_t value)
+void MdZ80Cpu::UpdateLogicalOpFlags(uint8_t value)
 {
 	SetStandardFlags<0xEC>(value);
 	ClearFlag(SmsCpuFlags::AddSub);
@@ -1322,7 +1322,7 @@ void MdZ80::UpdateLogicalOpFlags(uint8_t value)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::CP(uint8_t value)
+void MdZ80Cpu::CP(uint8_t value)
 {
 	int result = (int)_state.A - value;
 
@@ -1334,11 +1334,11 @@ void MdZ80::CP(uint8_t value)
 	SetFlag(SmsCpuFlags::AddSub);
 }
 
-void MdZ80::NOP()
+void MdZ80Cpu::NOP()
 {
 }
 
-void MdZ80::HALT()
+void MdZ80Cpu::HALT()
 {
 	_state.Halted = true;
 
@@ -1347,7 +1347,7 @@ void MdZ80::HALT()
 #endif
 }
 
-void MdZ80::CPL()
+void MdZ80Cpu::CPL()
 {
 	_state.A ^= 0xFF;
 	SetFlag(SmsCpuFlags::AddSub);
@@ -1355,7 +1355,7 @@ void MdZ80::CPL()
 	SetStandardFlags<0x28>(_state.A);
 }
 
-void MdZ80::RL(uint8_t& dst)
+void MdZ80Cpu::RL(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	uint8_t carry = (uint8_t)CheckFlag(SmsCpuFlags::Carry);
@@ -1367,7 +1367,7 @@ void MdZ80::RL(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RL_Indirect(uint16_t addr)
+void MdZ80Cpu::RL_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1380,7 +1380,7 @@ void MdZ80::RL_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::RLC(uint8_t& dst)
+void MdZ80Cpu::RLC(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetFlagState(SmsCpuFlags::Carry, (val & 0x80) != 0);
@@ -1391,7 +1391,7 @@ void MdZ80::RLC(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RLC_Indirect(uint16_t addr)
+void MdZ80Cpu::RLC_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1404,12 +1404,12 @@ void MdZ80::RLC_Indirect(uint16_t addr)
 	}
 }
 
-uint8_t MdZ80::GetCbValue(uint8_t dst)
+uint8_t MdZ80Cpu::GetCbValue(uint8_t dst)
 {
 	return _cbAddress >= 0 ? Read(_cbAddress) : dst;
 }
 
-void MdZ80::SetCbValue(uint8_t& dst, uint8_t val)
+void MdZ80Cpu::SetCbValue(uint8_t& dst, uint8_t val)
 {
 	if(_cbAddress >= 0) {
 		ExecCycles(1);
@@ -1418,7 +1418,7 @@ void MdZ80::SetCbValue(uint8_t& dst, uint8_t val)
 	dst = val;
 }
 
-void MdZ80::RR(uint8_t& dst)
+void MdZ80Cpu::RR(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	uint8_t carry = (uint8_t)CheckFlag(SmsCpuFlags::Carry) << 7;
@@ -1430,7 +1430,7 @@ void MdZ80::RR(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RR_Indirect(uint16_t addr)
+void MdZ80Cpu::RR_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1443,7 +1443,7 @@ void MdZ80::RR_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::RRC(uint8_t& dst)
+void MdZ80Cpu::RRC(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetFlagState(SmsCpuFlags::Carry, (val & 0x01) != 0);
@@ -1454,7 +1454,7 @@ void MdZ80::RRC(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RRC_Indirect(uint16_t addr)
+void MdZ80Cpu::RRC_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1467,7 +1467,7 @@ void MdZ80::RRC_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::RRA()
+void MdZ80Cpu::RRA()
 {
 	uint8_t carry = (uint8_t)CheckFlag(SmsCpuFlags::Carry) << 7;
 	SetFlagState(SmsCpuFlags::Carry, (_state.A & 0x01) != 0);
@@ -1478,7 +1478,7 @@ void MdZ80::RRA()
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RRCA()
+void MdZ80Cpu::RRCA()
 {
 	SetFlagState(SmsCpuFlags::Carry, (_state.A & 0x01) != 0);
 	_state.A = (_state.A >> 1) | ((_state.A & 0x01) << 7);
@@ -1488,7 +1488,7 @@ void MdZ80::RRCA()
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RLCA()
+void MdZ80Cpu::RLCA()
 {
 	SetFlagState(SmsCpuFlags::Carry, (_state.A & 0x80) != 0);
 	_state.A = (_state.A << 1) | ((_state.A & 0x80) >> 7);
@@ -1498,7 +1498,7 @@ void MdZ80::RLCA()
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::RLA()
+void MdZ80Cpu::RLA()
 {
 	uint8_t carry = (uint8_t)CheckFlag(SmsCpuFlags::Carry);
 	SetFlagState(SmsCpuFlags::Carry, (_state.A & 0x80) != 0);
@@ -1509,7 +1509,7 @@ void MdZ80::RLA()
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::SRL(uint8_t& dst)
+void MdZ80Cpu::SRL(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetFlagState(SmsCpuFlags::Carry, (val & 0x01) != 0);
@@ -1520,7 +1520,7 @@ void MdZ80::SRL(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::SRL_Indirect(uint16_t addr)
+void MdZ80Cpu::SRL_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1533,7 +1533,7 @@ void MdZ80::SRL_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::SRA(uint8_t& dst)
+void MdZ80Cpu::SRA(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetFlagState(SmsCpuFlags::Carry, (val & 0x01) != 0);
@@ -1544,7 +1544,7 @@ void MdZ80::SRA(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::SRA_Indirect(uint16_t addr)
+void MdZ80Cpu::SRA_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1557,7 +1557,7 @@ void MdZ80::SRA_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::SLA(uint8_t& dst)
+void MdZ80Cpu::SLA(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetFlagState(SmsCpuFlags::Carry, (val & 0x80) != 0);
@@ -1568,7 +1568,7 @@ void MdZ80::SLA(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::SLA_Indirect(uint16_t addr)
+void MdZ80Cpu::SLA_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1581,7 +1581,7 @@ void MdZ80::SLA_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::SLL(uint8_t& dst)
+void MdZ80Cpu::SLL(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetFlagState(SmsCpuFlags::Carry, (val & 0x80) != 0);
@@ -1592,7 +1592,7 @@ void MdZ80::SLL(uint8_t& dst)
 	ClearFlag(SmsCpuFlags::HalfCarry);
 }
 
-void MdZ80::SLL_Indirect(uint16_t addr)
+void MdZ80Cpu::SLL_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1606,7 +1606,7 @@ void MdZ80::SLL_Indirect(uint16_t addr)
 }
 
 template<uint8_t bit>
-void MdZ80::BIT(uint8_t src)
+void MdZ80Cpu::BIT(uint8_t src)
 {
 	uint8_t val = GetCbValue(src);
 	uint8_t andResult = (val & (1 << bit));
@@ -1617,7 +1617,7 @@ void MdZ80::BIT(uint8_t src)
 }
 
 template<uint8_t bit>
-void MdZ80::BIT_Indirect(Register16& src)
+void MdZ80Cpu::BIT_Indirect(Register16& src)
 {
 	uint8_t val = Read(_cbAddress >= 0 ? _cbAddress : src);
 	uint8_t andResult = (val & (1 << bit));
@@ -1629,14 +1629,14 @@ void MdZ80::BIT_Indirect(Register16& src)
 }
 
 template<uint8_t bit>
-void MdZ80::RES(uint8_t& dst)
+void MdZ80Cpu::RES(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetCbValue(dst, val & ~(1 << bit));
 }
 
 template<uint8_t bit>
-void MdZ80::RES_Indirect(uint16_t addr)
+void MdZ80Cpu::RES_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1650,14 +1650,14 @@ void MdZ80::RES_Indirect(uint16_t addr)
 }
 
 template<uint8_t bit>
-void MdZ80::SET(uint8_t& dst)
+void MdZ80Cpu::SET(uint8_t& dst)
 {
 	uint8_t val = GetCbValue(dst);
 	SetCbValue(dst, val | (1 << bit));
 }
 
 template<uint8_t bit>
-void MdZ80::SET_Indirect(uint16_t addr)
+void MdZ80Cpu::SET_Indirect(uint16_t addr)
 {
 	if(_cbAddress < 0) {
 		uint8_t val = Read(addr);
@@ -1670,7 +1670,7 @@ void MdZ80::SET_Indirect(uint16_t addr)
 	}
 }
 
-void MdZ80::DAA()
+void MdZ80Cpu::DAA()
 {
 	uint8_t originalValue = _state.A;
 	if(CheckFlag(SmsCpuFlags::Carry) || _state.A > 0x99) {
@@ -1684,12 +1684,12 @@ void MdZ80::DAA()
 	SetStandardFlags<0xEC>(_state.A);
 }
 
-void MdZ80::JP(uint16_t dstAddr)
+void MdZ80Cpu::JP(uint16_t dstAddr)
 {
 	_state.PC = dstAddr;
 }
 
-void MdZ80::JP(bool condition, uint16_t dstAddr)
+void MdZ80Cpu::JP(bool condition, uint16_t dstAddr)
 {
 	_state.WZ = dstAddr;
 	if(condition) {
@@ -1697,13 +1697,13 @@ void MdZ80::JP(bool condition, uint16_t dstAddr)
 	}
 }
 
-void MdZ80::JR(int8_t offset)
+void MdZ80Cpu::JR(int8_t offset)
 {
 	ExecCycles(5);
 	_state.PC += offset;
 }
 
-void MdZ80::JR(bool condition, int8_t offset)
+void MdZ80Cpu::JR(bool condition, int8_t offset)
 {
 	if(condition) {
 		ExecCycles(5);
@@ -1712,7 +1712,7 @@ void MdZ80::JR(bool condition, int8_t offset)
 	}
 }
 
-void MdZ80::CALL(uint16_t dstAddr)
+void MdZ80Cpu::CALL(uint16_t dstAddr)
 {
 	ExecCycles(1);
 	PushWord(_state.PC);
@@ -1720,7 +1720,7 @@ void MdZ80::CALL(uint16_t dstAddr)
 	_state.WZ = _state.PC;
 }
 
-void MdZ80::CALL(bool condition, uint16_t dstAddr)
+void MdZ80Cpu::CALL(bool condition, uint16_t dstAddr)
 {
 	_state.WZ = dstAddr;
 	if(condition) {
@@ -1730,13 +1730,13 @@ void MdZ80::CALL(bool condition, uint16_t dstAddr)
 	}
 }
 
-void MdZ80::RET()
+void MdZ80Cpu::RET()
 {
 	_state.PC = PopWord();
 	_state.WZ = _state.PC;
 }
 
-void MdZ80::RET(bool condition)
+void MdZ80Cpu::RET(bool condition)
 {
 	ExecCycles(1);
 	if(condition) {
@@ -1745,14 +1745,14 @@ void MdZ80::RET(bool condition)
 	}
 }
 
-void MdZ80::RETI()
+void MdZ80Cpu::RETI()
 {
 	_state.IFF1 = _state.IFF2;
 	_state.PC = PopWord();
 	_state.WZ = _state.PC;
 }
 
-void MdZ80::RST(uint8_t value)
+void MdZ80Cpu::RST(uint8_t value)
 {
 	ExecCycles(1);
 	PushWord(_state.PC);
@@ -1760,23 +1760,23 @@ void MdZ80::RST(uint8_t value)
 	_state.WZ = _state.PC;
 }
 
-void MdZ80::POP(Register16& reg)
+void MdZ80Cpu::POP(Register16& reg)
 {
 	reg.Write(PopWord());
 }
 
-void MdZ80::PUSH(Register16& reg)
+void MdZ80Cpu::PUSH(Register16& reg)
 {
 	ExecCycles(1);
 	PushWord(reg);
 }
 
-void MdZ80::POP_AF()
+void MdZ80Cpu::POP_AF()
 {
 	_regAF.Write(PopWord());
 }
 
-void MdZ80::SCF()
+void MdZ80Cpu::SCF()
 {
 	SetFlag(SmsCpuFlags::Carry);
 	ClearFlag(SmsCpuFlags::AddSub);
@@ -1790,7 +1790,7 @@ void MdZ80::SCF()
 	}
 }
 
-void MdZ80::CCF()
+void MdZ80Cpu::CCF()
 {
 	SetFlagState(SmsCpuFlags::HalfCarry, CheckFlag(SmsCpuFlags::Carry));
 	_state.Flags ^= SmsCpuFlags::Carry;
@@ -1804,25 +1804,25 @@ void MdZ80::CCF()
 	}
 }
 
-void MdZ80::IM(uint8_t mode)
+void MdZ80Cpu::IM(uint8_t mode)
 {
 	_state.IM = mode;
 }
 
-void MdZ80::EI()
+void MdZ80Cpu::EI()
 {
 	//"EI also explicitely supresses maskable interrupts in the second half of its opcode fetch machine cycle."
 	_state.IFF1 = true;
 	_state.IFF2 = true;
 }
 
-void MdZ80::DI()
+void MdZ80Cpu::DI()
 {
 	_state.IFF1 = false;
 	_state.IFF2 = false;
 }
 
-void MdZ80::SetNmiLevel(bool nmiLevel)
+void MdZ80Cpu::SetNmiLevel(bool nmiLevel)
 {
 	if(!_state.NmiLevel && nmiLevel) {
 		_state.NmiPending = true;
@@ -1831,7 +1831,7 @@ void MdZ80::SetNmiLevel(bool nmiLevel)
 }
 
 template<uint8_t prefix>
-void MdZ80::PREFIX_CB()
+void MdZ80Cpu::PREFIX_CB()
 {
 	switch(prefix) {
 		default: _cbAddress = -1; break;
@@ -2105,7 +2105,7 @@ void MdZ80::PREFIX_CB()
 }
 
 
-void MdZ80::Serialize(Serializer& s)
+void MdZ80Cpu::Serialize(Serializer& s)
 {
 	SV(_state.CycleCount);
 	SV(_state.PC);

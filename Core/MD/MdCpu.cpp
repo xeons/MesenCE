@@ -386,7 +386,11 @@ void MdCpu::ProcessInterrupt(uint8_t level)
 	WriteWord(sp - 2, (uint16_t)_state.PC);
 
 	//Interrupt acknowledge cycle (autovector, synchronized with the E clock)
+#ifdef DUMMYCPU
+	uint8_t vector = 24 + level;
+#else
 	uint8_t vector = _memoryManager->AcknowledgeInterrupt(level);
+#endif
 	Idle(8);
 
 	WriteWord(sp - 6, sr);
@@ -464,6 +468,12 @@ void MdCpu::SetDummyState(MdCpuState& state)
 {
 	_memOpCounter = 0;
 	_state = state;
+	_state.ActiveIrqs = 0;
+	_state.IrqLevel = 0;
+	_state.PendingIrqLevel = 0;
+	_state.NmiEdge = false;
+	_state.Stopped = false;
+	_state.Halted = false;
 }
 
 uint32_t MdCpu::GetOperationCount()

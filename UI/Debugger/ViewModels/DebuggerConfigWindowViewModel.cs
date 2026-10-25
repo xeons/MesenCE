@@ -166,6 +166,7 @@ namespace Mesen.Debugger.ViewModels
 				DebuggerShortcut.OpenGsuDebugger,
 				DebuggerShortcut.OpenNecDspDebugger,
 				DebuggerShortcut.OpenCx4Debugger,
+				DebuggerShortcut.OpenMdZ80Debugger,
 			});
 
 			MemoryToolsShortcuts = CreateShortcutList(new DebuggerShortcut[] {

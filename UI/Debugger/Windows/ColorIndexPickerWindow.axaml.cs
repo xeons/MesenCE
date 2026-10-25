@@ -56,11 +56,31 @@ namespace Mesen.Debugger.Windows
 					ColumnCount = 8;
 					break;
 
+				case CpuType.Md:
+					Palette = GenerateMdPalette();
+					ColumnCount = 32;
+					BlockSize = 16;
+					break;
+
 				default:
 					throw new NotImplementedException();
 			}
 
 			InitializeComponent();
+		}
+
+		private static UInt32[] GenerateMdPalette()
+		{
+			//Index is the raw 9-bit color value (BBBGGGRRR), converted using the VDP's DAC output levels
+			byte[] levels = new byte[] { 0, 52, 87, 116, 144, 172, 206, 255 };
+			UInt32[] pal = new UInt32[0x200];
+			for(int i = 0; i < 0x200; i++) {
+				byte r = levels[i & 0x07];
+				byte g = levels[(i >> 3) & 0x07];
+				byte b = levels[(i >> 6) & 0x07];
+				pal[i] = 0xFF000000 | (UInt32)(r << 16) | (UInt32)(g << 8) | b;
+			}
+			return pal;
 		}
 
 		private static UInt32[] GenerateWsPalette()

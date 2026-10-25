@@ -142,12 +142,6 @@ namespace Mesen.Debugger.Utilities
 				case ConsoleNotificationType.GameLoadFailed:
 					//Load operation is done, allow notifications to be sent to windows
 					_loadingGame = false;
-
-					if(e.NotificationType == ConsoleNotificationType.GameLoaded && !EmuApi.GetRomInfo().ConsoleType.SupportsDebugger()) {
-						//The debugger isn't supported for this console, close all debug tools
-						Dispatcher.UIThread.Post(() => DebugWindowManager.CloseAllWindows());
-						return;
-					}
 					break;
 			}
 

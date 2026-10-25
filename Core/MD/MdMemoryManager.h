@@ -36,7 +36,7 @@ private:
 	Emulator* _emu = nullptr;
 	MdConsole* _console = nullptr;
 	MdCpu* _cpu = nullptr;
-	MdZ80* _z80 = nullptr;
+	MdZ80Cpu* _z80 = nullptr;
 	MdVdp* _vdp = nullptr;
 	MdCart* _cart = nullptr;
 	MdPsg* _psg = nullptr;
@@ -120,7 +120,7 @@ public:
 	MdMemoryManager();
 	~MdMemoryManager();
 
-	void Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80* z80, MdVdp* vdp, MdCart* cart, MdPsg* psg, MdFmAudio* fmAudio, MdControlManager* controlManager);
+	void Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, MdVdp* vdp, MdCart* cart, MdPsg* psg, MdFmAudio* fmAudio, MdControlManager* controlManager);
 
 	MdMemoryManagerState& GetState() { return _state; }
 	uint64_t GetMasterClock() { return _masterClock; }

@@ -202,6 +202,10 @@ enum EvalValues : int64_t
 	RegBP,
 	RegIP,
 
+	RegUSP,
+	RegSSP,
+	RegPS_Extend,
+
 	FirstLabelIndex,
 };
 
@@ -288,6 +292,12 @@ private:
 
 	unordered_map<string, int64_t>& GetWsTokens();
 	int64_t GetWsTokenValue(int64_t token, EvalResultType& resultType);
+
+	unordered_map<string, int64_t>& GetMdTokens();
+	int64_t GetMdTokenValue(int64_t token, EvalResultType& resultType);
+
+	unordered_map<string, int64_t>& GetMdZ80Tokens();
+	int64_t GetMdZ80TokenValue(int64_t token, EvalResultType& resultType);
 
 	bool ReturnBool(int64_t value, EvalResultType& resultType);
 

@@ -22,6 +22,7 @@
 #include "SMS/SmsTypes.h"
 #include "WS/WsTypes.h"
 #include "WS/Debugger/WsDisUtils.h"
+#include "MD/MdTypes.h"
 #include "Shared/EmuSettings.h"
 #include "Utilities/FastString.h"
 #include "Utilities/HexUtilities.h"
@@ -93,13 +94,17 @@ void Disassembler::ResetPrgCache()
 	InitSource(MemoryType::SmsPrgRom);
 	InitSource(MemoryType::GbaPrgRom);
 	InitSource(MemoryType::WsPrgRom);
+	InitSource(MemoryType::MdPrgRom);
 }
 
 void Disassembler::InvalidateCache(AddressInfo addrInfo, CpuType type)
 {
 	if(addrInfo.Address >= 0) {
 		DisassemblerSource& src = GetSource(addrInfo.Type);
-		for(int i = 0; i < 4; i++) {
+
+		//68000 instructions can be up to 10 bytes long
+		int maxOpSize = type == CpuType::Md ? 10 : 4;
+		for(int i = 0; i < maxOpSize; i++) {
 			if(addrInfo.Address >= i) {
 				src.Cache[addrInfo.Address - i].Reset();
 			}
@@ -202,6 +207,8 @@ vector<DisassemblyResult> Disassembler::Disassemble(CpuType cpuType, uint16_t ba
 
 		if(disassemblyInfo.IsInitialized()) {
 			opSize = disassemblyInfo.GetOpSize();
+		} else if(cpuType == CpuType::Md && (i & 0x01)) {
+			//68000 instructions are always word-aligned
 		} else if((isData && disData) || (!isData && !isCode && disUnident)) {
 			disassemblyInfo.Initialize(i, cpuFlags[addrInfo.Address & 0x03], cpuType, relAddress.Type, _memoryDumper);
 			opSize = disassemblyInfo.GetOpSize();
@@ -330,6 +337,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 		case MemoryType::SnesPrgRom:
 		case MemoryType::NesPrgRom:
 		case MemoryType::PcePrgRom:
+		case MemoryType::MdPrgRom:
 			data.Flags |= (uint8_t)LineFlags::PrgRom;
 			break;
 
@@ -337,6 +345,8 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 		case MemoryType::SnesWorkRam:
 		case MemoryType::NesWorkRam:
 		case MemoryType::PceWorkRam:
+		case MemoryType::MdWorkRam:
+		case MemoryType::MdZ80Ram:
 			data.Flags |= (uint8_t)LineFlags::WorkRam;
 			break;
 
@@ -344,6 +354,7 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 		case MemoryType::SnesSaveRam:
 		case MemoryType::NesSaveRam:
 		case MemoryType::PceSaveRam:
+		case MemoryType::MdSaveRam:
 			data.Flags |= (uint8_t)LineFlags::SaveRam;
 			break;
 	}
@@ -581,6 +592,43 @@ void Disassembler::GetLineData(DisassemblyResult& row, CpuType type, MemoryType 
 					state.Pipeline.Execute.Address = (uint32_t)row.CpuAddress;
 					state.R[15] = state.Pipeline.Execute.Address + (data.OpSize * 2);
 
+					data.EffectiveAddress = disInfo.GetEffectiveAddress(_debugger, &state, lineCpuType);
+					if(showMemoryValues && data.EffectiveAddress.ValueSize >= 0) {
+						data.Value = disInfo.GetMemoryValue(data.EffectiveAddress, _memoryDumper, memType);
+					}
+					break;
+				}
+
+				case CpuType::Md: {
+					MdCpuState state = (MdCpuState&)_debugger->GetCpuStateRef(lineCpuType);
+					state.PC = (uint32_t)row.CpuAddress;
+
+					CodeDataLogger* cdl = cdlManager->GetCodeDataLogger(row.Address.Type);
+					if(!disInfo.IsInitialized()) {
+						disInfo = DisassemblyInfo(row.Address.Address, 0, CpuType::Md, row.Address.Type, _memoryDumper);
+					} else {
+						data.Flags |= (!cdl || cdl->IsCode(data.AbsoluteAddress.Address)) ? LineFlags::VerifiedCode : LineFlags::UnexecutedCode;
+					}
+
+					data.OpSize = disInfo.GetOpSize();
+					data.EffectiveAddress = disInfo.GetEffectiveAddress(_debugger, &state, lineCpuType);
+					if(showMemoryValues && data.EffectiveAddress.ValueSize >= 0) {
+						data.Value = disInfo.GetMemoryValue(data.EffectiveAddress, _memoryDumper, memType);
+					}
+					break;
+				}
+
+				case CpuType::MdZ80: {
+					MdZ80State state = (MdZ80State&)_debugger->GetCpuStateRef(lineCpuType);
+					state.PC = (uint16_t)row.CpuAddress;
+
+					if(!disInfo.IsInitialized()) {
+						disInfo = DisassemblyInfo(row.Address.Address, 0, CpuType::MdZ80, row.Address.Type, _memoryDumper);
+					} else {
+						data.Flags |= LineFlags::VerifiedCode;
+					}
+
+					data.OpSize = disInfo.GetOpSize();
 					data.EffectiveAddress = disInfo.GetEffectiveAddress(_debugger, &state, lineCpuType);
 					if(showMemoryValues && data.EffectiveAddress.ValueSize >= 0) {
 						data.Value = disInfo.GetMemoryValue(data.EffectiveAddress, _memoryDumper, memType);

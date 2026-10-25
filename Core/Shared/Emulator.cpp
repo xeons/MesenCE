@@ -1134,11 +1134,6 @@ void Emulator::ResetDebugger(bool startDebugger)
 
 void Emulator::InitDebugger()
 {
-	if(GetConsoleType() == ConsoleType::MegaDrive) {
-		//TODOMD debugger is not implemented yet
-		return;
-	}
-
 	if(!_debugger) {
 		//Lock to make sure we don't try to start debuggers in 2 separate threads at once
 		auto lock = _debuggerLock.AcquireSafe();

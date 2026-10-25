@@ -76,7 +76,8 @@ struct MdCpuState : public BaseState
 
 struct MdZ80State : public SmsCpuState
 {
-	bool BusRequested; //68000 has requested the Z80 bus via $A11100
+	//Aligned to prevent GCC/Clang from placing the fields in SmsCpuState's tail padding (keeps the layout identical to MSVC's for the UI)
+	alignas(8) bool BusRequested; //68000 has requested the Z80 bus via $A11100
 	bool Reset; //Reset line held via $A11200 (active when false is written)
 	uint16_t BankRegister; //9-bit bank register for the $8000-$FFFF window (68000 address bits 15-23)
 	uint8_t BankShiftCount;

@@ -578,6 +578,8 @@ namespace Mesen.Debugger.Utilities
 		OpenSt018Debugger,
 		[IconFile("GameboyDebugger")]
 		OpenGameboyDebugger,
+		[IconFile("MdZ80Debugger")]
+		OpenMdZ80Debugger,
 
 		[IconFile("CheatCode")]
 		Cheats,

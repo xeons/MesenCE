@@ -51,6 +51,35 @@
 						}
 					}
 					break;
+
+				case CpuType.Md:
+					switch(evt.RegisterId) {
+						case 0: return "Mode1";
+						case 1: return "Mode2";
+						case 2: return "PlaneA";
+						case 3: return "Window";
+						case 4: return "PlaneB";
+						case 5: return "SpriteTable";
+						case 6: return "SpritePattern";
+						case 7: return "BgColor";
+						case 8: return "Mode4HScroll";
+						case 9: return "Mode4VScroll";
+						case 10: return "HIntCounter";
+						case 11: return "Mode3";
+						case 12: return "Mode4";
+						case 13: return "HScrollTable";
+						case 14: return "PlanePattern";
+						case 15: return "AutoIncrement";
+						case 16: return "PlaneSize";
+						case 17: return "WindowH";
+						case 18: return "WindowV";
+						case 19: return "DmaLengthLo";
+						case 20: return "DmaLengthHi";
+						case 21: return "DmaSourceLo";
+						case 22: return "DmaSourceMid";
+						case 23: return "DmaSourceHi";
+					}
+					break;
 			}
 
 			return "";

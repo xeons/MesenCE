@@ -28,14 +28,5 @@ namespace Mesen.Interop
 				_ => true
 			};
 		}
-
-		public static bool SupportsDebugger(this ConsoleType type)
-		{
-			return type switch {
-				//TODOMD debugger support
-				ConsoleType.MegaDrive => false,
-				_ => true
-			};
-		}
 	}
 }

@@ -7,7 +7,7 @@
 class Emulator;
 class MdConsole;
 class MdCpu;
-class MdZ80;
+class MdZ80Cpu;
 class MdMemoryManager;
 
 class MdVdp final : public ISerializable
@@ -51,7 +51,7 @@ private:
 	Emulator* _emu = nullptr;
 	MdConsole* _console = nullptr;
 	MdCpu* _cpu = nullptr;
-	MdZ80* _z80 = nullptr;
+	MdZ80Cpu* _z80 = nullptr;
 	MdMemoryManager* _memoryManager = nullptr;
 
 	MdVdpState _state = {};
@@ -150,7 +150,7 @@ private:
 public:
 	~MdVdp();
 
-	void Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80* z80, MdMemoryManager* memoryManager);
+	void Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, MdMemoryManager* memoryManager);
 	void SetRegion(ConsoleRegion region);
 
 	//Runs the VDP until it catches up to the specified master clock
@@ -194,6 +194,14 @@ public:
 	uint8_t* GetVideoRam() { return _videoRam; }
 	uint8_t* GetColorRam() { return _colorRam; }
 	uint8_t* GetVsRam() { return _vsRam; }
+
+	//Debugger helpers
+	uint8_t* GetSpriteCache() { return _spriteCache; }
+	uint16_t* GetRenderBuffer() { return _renderBuffer; }
+	uint16_t GetRenderLineWidth(uint32_t row) { return row < MdConstants::MaxScreenHeight ? _lineWidths[row] : 0; }
+	uint16_t GetActiveLineCount() { return _activeLines; }
+	bool IsInterlaceMode2Frame() { return IsInterlaceMode2(); }
+	uint16_t GetActiveDisplayStartClock();
 
 	uint16_t* GetScreenBuffer(bool previousBuffer)
 	{

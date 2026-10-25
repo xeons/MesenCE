@@ -52,6 +52,9 @@
 		</DataTemplate>
 		<DataTemplate DataType="{x:Type cfg:WsEventViewerConfig}">
 			<v:WsEventViewerConfigView />
+		</DataTemplate>
+		<DataTemplate DataType="{x:Type cfg:MdEventViewerConfig}">
+			<v:MdEventViewerConfigView />
 		</DataTemplate>	
 	</Window.DataTemplates>
 	

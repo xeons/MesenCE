@@ -130,6 +130,8 @@ namespace Mesen.Debugger.ViewModels
 				CpuType.Sms => new SmsStatusViewModel(),
 				CpuType.Gba => new GbaStatusViewModel(),
 				CpuType.Ws => new WsStatusViewModel(),
+				CpuType.Md => new MdStatusViewModel(),
+				CpuType.MdZ80 => new SmsStatusViewModel(CpuType.MdZ80),
 				_ => null
 			};
 
@@ -702,6 +704,10 @@ namespace Mesen.Debugger.ViewModels
 					return vector[0] | (vector[1] << 8);
 				} else if(def.Type == VectorType.Direct) {
 					return (int)def.Address;
+				} else if(def.Type == VectorType.IndirectBigEndian32) {
+					//68000: 32-bit big endian vectors, only the low 24 bits are used
+					byte[] vector = DebugApi.GetMemoryValues(CpuType.ToMemoryType(), def.Address, def.Address + 3);
+					return ((vector[1] << 16) | (vector[2] << 8) | vector[3]) & 0xFFFFFF;
 				} else {
 					byte[] vector = Array.Empty<byte>();
 					if(def.Type == VectorType.x86) {

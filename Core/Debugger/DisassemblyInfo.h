@@ -33,7 +33,7 @@ struct EffectiveAddressInfo
 class DisassemblyInfo
 {
 private:
-	uint8_t _byteCode[8];
+	uint8_t _byteCode[10];
 	uint8_t _opSize;
 	uint8_t _flags;
 	CpuType _cpuType;

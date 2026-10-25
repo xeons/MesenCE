@@ -28,6 +28,12 @@ namespace Mesen.Debugger.Utilities
 				entries.AddEntry("R", "$" + (rawPalette[index] & 0x1F).ToString("X2"));
 				entries.AddEntry("G", "$" + ((rawPalette[index] >> 5) & 0x1F).ToString("X2"));
 				entries.AddEntry("B", "$" + ((rawPalette[index] >> 10) & 0x1F).ToString("X2"));
+			} else if(format == RawPaletteFormat.Rgb333 && EmuApi.GetRomInfo().ConsoleType == ConsoleType.MegaDrive) {
+				//Mega Drive (BBBGGGRRR)
+				entries.AddEntry("Value", "$" + rawPalette[index].ToString("X3"));
+				entries.AddEntry("R", "$" + (rawPalette[index] & 0x07).ToString("X2"));
+				entries.AddEntry("G", "$" + ((rawPalette[index] >> 3) & 0x07).ToString("X2"));
+				entries.AddEntry("B", "$" + ((rawPalette[index] >> 6) & 0x07).ToString("X2"));
 			} else if(format == RawPaletteFormat.Rgb333) {
 				//PC Engine
 				entries.AddEntry("Value", "$" + rawPalette[index].ToString("X3"));

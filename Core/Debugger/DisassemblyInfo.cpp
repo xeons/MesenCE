@@ -20,6 +20,9 @@
 #include "SMS/Debugger/SmsDisUtils.h"
 #include "GBA/Debugger/GbaDisUtils.h"
 #include "WS/Debugger/WsDisUtils.h"
+#include "MD/Debugger/MdDisUtils.h"
+#include "MD/Debugger/MdZ80DisUtils.h"
+#include "MD/MdTypes.h"
 #include "Shared/EmuSettings.h"
 
 DisassemblyInfo::DisassemblyInfo()
@@ -40,7 +43,7 @@ void DisassemblyInfo::Initialize(uint32_t cpuAddress, uint8_t cpuFlags, CpuType 
 
 	_opSize = GetOpSize(_byteCode[0], _flags, _cpuType, cpuAddress, memType, memoryDumper);
 
-	for(int i = 1; i < _opSize && i < 8; i++) {
+	for(int i = 1; i < _opSize && i < (int)sizeof(_byteCode); i++) {
 		_byteCode[i] = memoryDumper->GetMemoryValue(memType, cpuAddress + i);
 	}
 
@@ -81,6 +84,8 @@ void DisassemblyInfo::GetDisassembly(string& out, uint32_t memoryAddr, LabelMana
 		case CpuType::Sms: SmsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::Gba: GbaDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 		case CpuType::Ws: WsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+		case CpuType::Md: MdDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
+		case CpuType::MdZ80: SmsDisUtils::GetDisassembly(*this, out, memoryAddr, labelManager, settings); break;
 
 		default:
 			throw std::runtime_error("GetDisassembly - Unsupported CPU type");
@@ -116,6 +121,8 @@ EffectiveAddressInfo DisassemblyInfo::GetEffectiveAddress(Debugger* debugger, vo
 		case CpuType::Sms: return SmsDisUtils::GetEffectiveAddress(*this, (SmsConsole*)debugger->GetConsole(), *(SmsCpuState*)cpuState);
 		case CpuType::Gba: return GbaDisUtils::GetEffectiveAddress(*this, (GbaConsole*)debugger->GetConsole(), *(GbaCpuState*)cpuState);
 		case CpuType::Ws: return WsDisUtils::GetEffectiveAddress(*this, (WsConsole*)debugger->GetConsole(), *(WsCpuState*)cpuState);
+		case CpuType::Md: return MdDisUtils::GetEffectiveAddress(*this, (MdConsole*)debugger->GetConsole(), *(MdCpuState*)cpuState);
+		case CpuType::MdZ80: return MdZ80DisUtils::GetEffectiveAddress(*this, (MdConsole*)debugger->GetConsole(), *(MdZ80State*)cpuState);
 	}
 
 	throw std::runtime_error("GetEffectiveAddress - Unsupported CPU type");
@@ -161,7 +168,7 @@ uint8_t* DisassemblyInfo::GetByteCode()
 
 void DisassemblyInfo::GetByteCode(uint8_t copyBuffer[8])
 {
-	memcpy(copyBuffer, _byteCode, _opSize);
+	memcpy(copyBuffer, _byteCode, std::min<uint8_t>(_opSize, 8));
 }
 
 void DisassemblyInfo::GetByteCode(string& out, bool lowerCase)
@@ -198,6 +205,8 @@ uint8_t DisassemblyInfo::GetOpSize(uint32_t opCode, uint8_t flags, CpuType type,
 		case CpuType::Sms: return SmsDisUtils::GetOpSize(opCode, cpuAddress, memType, memoryDumper);
 		case CpuType::Gba: return GbaDisUtils::GetOpSize(opCode, flags);
 		case CpuType::Ws: return WsDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
+		case CpuType::Md: return MdDisUtils::GetOpSize(cpuAddress, memType, memoryDumper);
+		case CpuType::MdZ80: return SmsDisUtils::GetOpSize(opCode, cpuAddress, memType, memoryDumper);
 	}
 
 	throw std::runtime_error("GetOpSize - Unsupported CPU type");
@@ -219,6 +228,8 @@ bool DisassemblyInfo::IsJumpToSub()
 		case CpuType::Sms: return SmsDisUtils::IsJumpToSub(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsJumpToSub(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Md: return MdDisUtils::IsJumpToSub(MdDisUtils::GetOpCode(*this));
+		case CpuType::MdZ80: return SmsDisUtils::IsJumpToSub(GetOpCode());
 	}
 
 	throw std::runtime_error("IsJumpToSub - Unsupported CPU type");
@@ -240,6 +251,8 @@ bool DisassemblyInfo::IsReturnInstruction()
 		case CpuType::Sms: return SmsDisUtils::IsReturnInstruction(_byteCode[0] | (_byteCode[1] << 8));
 		case CpuType::Gba: return GbaDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsReturnInstruction(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Md: return MdDisUtils::IsReturnInstruction(MdDisUtils::GetOpCode(*this));
+		case CpuType::MdZ80: return SmsDisUtils::IsReturnInstruction(_byteCode[0] | (_byteCode[1] << 8));
 	}
 
 	throw std::runtime_error("IsReturnInstruction - Unsupported CPU type");
@@ -276,6 +289,8 @@ bool DisassemblyInfo::IsUnconditionalJump()
 		case CpuType::Sms: return SmsDisUtils::IsUnconditionalJump(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsUnconditionalJump(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Md: return MdDisUtils::IsUnconditionalJump(MdDisUtils::GetOpCode(*this));
+		case CpuType::MdZ80: return SmsDisUtils::IsUnconditionalJump(GetOpCode());
 	}
 
 	throw std::runtime_error("IsUnconditionalJump - Unsupported CPU type");
@@ -302,6 +317,8 @@ bool DisassemblyInfo::IsJump()
 		case CpuType::Sms: return SmsDisUtils::IsConditionalJump(GetOpCode());
 		case CpuType::Gba: return GbaDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Gba>(), _flags);
 		case CpuType::Ws: return WsDisUtils::IsConditionalJump(GetFullOpCode<CpuType::Ws>());
+		case CpuType::Md: return MdDisUtils::IsConditionalJump(MdDisUtils::GetOpCode(*this));
+		case CpuType::MdZ80: return SmsDisUtils::IsConditionalJump(GetOpCode());
 	}
 
 	throw std::runtime_error("IsJump - Unsupported CPU type");

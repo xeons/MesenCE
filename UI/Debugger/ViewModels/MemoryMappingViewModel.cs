@@ -49,8 +49,66 @@ namespace Mesen.Debugger.ViewModels
 					CpuMappings = UpdateMappings(CpuMappings, GetSmsCpuMappings(DebugApi.GetConsoleState<SmsState>(ConsoleType.Sms).MemoryManager));
 				} else if(_cpuType == CpuType.Ws) {
 					CpuMappings = UpdateMappings(CpuMappings, GetWsCpuMappings(DebugApi.GetConsoleState<WsState>(ConsoleType.Ws).MemoryManager));
+				} else if(_cpuType == CpuType.Md) {
+					CpuMappings = UpdateMappings(CpuMappings, GetMdCpuMappings(DebugApi.GetConsoleState<MdState>(ConsoleType.MegaDrive).MemoryManager));
+				} else if(_cpuType == CpuType.MdZ80) {
+					CpuMappings = UpdateMappings(CpuMappings, GetMdZ80Mappings(DebugApi.GetConsoleState<MdState>(ConsoleType.MegaDrive).Z80));
 				}
 			} catch { }
+		}
+
+		private List<MemoryMappingBlock> GetMdCpuMappings(MdMemoryManagerState state)
+		{
+			Color romColor = Color.FromRgb(0xC4, 0xE7, 0xD4);
+			Color romAltColor = Color.FromRgb(0xA4, 0xD7, 0xB4);
+			Color ramColor = Color.FromRgb(0xCD, 0xDC, 0xFA);
+			Color regColor = Color.FromRgb(222, 222, 222);
+			Color unmappedColor = Color.FromRgb(200, 200, 200);
+
+			List<MemoryMappingBlock> mappings = new();
+
+			bool isBanked = false;
+			for(int i = 0; i < 8; i++) {
+				if(state.RomBanks[i] != i) {
+					isBanked = true;
+					break;
+				}
+			}
+
+			if(isBanked) {
+				//Sega mapper: 8 banks of 512KB
+				for(int i = 0; i < 8; i++) {
+					mappings.Add(new MemoryMappingBlock() { Name = "ROM", Length = 0x80000, Color = (i & 1) == 0 ? romColor : romAltColor, Note = "R", Page = state.RomBanks[i] });
+				}
+			} else {
+				mappings.Add(new MemoryMappingBlock() { Name = "ROM", Length = 0x400000, Color = romColor, Note = state.CartRamEnabled ? "R (SRAM at $200000)" : "R" });
+			}
+
+			mappings.Add(new MemoryMappingBlock() { Name = "Expansion / 32X", Length = 0x600000, Color = unmappedColor, Note = "OB" });
+			mappings.Add(new MemoryMappingBlock() { Name = "Z80", Length = 0x10000, Color = ramColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "I/O / Control", Length = 0x1F0000, Color = regColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "VDP", Length = 0x200000, Color = regColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "Work RAM", Length = 0x200000, Color = ramColor, Note = "RW" });
+
+			return mappings;
+		}
+
+		private List<MemoryMappingBlock> GetMdZ80Mappings(MdZ80State state)
+		{
+			Color ramColor = Color.FromRgb(0xCD, 0xDC, 0xFA);
+			Color ramAltColor = Color.FromRgb(0xBD, 0xCC, 0xEA);
+			Color regColor = Color.FromRgb(222, 222, 222);
+			Color bankColor = Color.FromRgb(0xC4, 0xE7, 0xD4);
+
+			List<MemoryMappingBlock> mappings = new();
+			mappings.Add(new MemoryMappingBlock() { Name = "RAM", Length = 0x2000, Color = ramColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "RAM (mirror)", Length = 0x2000, Color = ramAltColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "YM2612", Length = 0x2000, Color = regColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "Bank", Length = 0x100, Color = regColor, Note = "W" });
+			mappings.Add(new MemoryMappingBlock() { Name = "", Length = 0x1E00, Color = regColor, Note = "OB" });
+			mappings.Add(new MemoryMappingBlock() { Name = "VDP", Length = 0x100, Color = regColor, Note = "RW" });
+			mappings.Add(new MemoryMappingBlock() { Name = "68000 $" + ((UInt32)state.BankRegister << 15).ToString("X6"), Length = 0x8000, Color = bankColor, Note = "RW", Page = state.BankRegister });
+			return mappings;
 		}
 
 		private List<MemoryMappingBlock> UpdateMappings(List<MemoryMappingBlock>? oldMappings, List<MemoryMappingBlock> newMappings)
