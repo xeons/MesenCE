@@ -84,10 +84,11 @@ void MdPsg::Run()
 			blip_add_delta(_buffer, (uint32_t)_clockCounter, output - _prevOutput);
 			_prevOutput = (int16_t)output;
 		}
-	}
 
-	if(_clockCounter >= 20000) {
-		PlayQueuedAudio();
+		if(_clockCounter >= 20000) {
+			//Flush regularly - blip_buf's buffer can only hold MaxSamples samples
+			PlayQueuedAudio();
+		}
 	}
 }
 

@@ -566,13 +566,13 @@ double EmuSettings::GetAspectRatio(ConsoleRegion region, FrameInfo baseFrameSize
 				//GG has a 6:5 PAR
 				return screenAspectRatio * (6.0 / 5.0);
 			} else if(_emu->GetConsoleType() == ConsoleType::MegaDrive) {
-				if(baseFrameSize.Height > 240) {
+				if(baseFrameSize.Height > 300) {
 					//Interlace mode 2 outputs twice as many lines
 					screenAspectRatio *= 2;
 				}
 
 				bool isPal = region == ConsoleRegion::Pal;
-				if(baseFrameSize.Width >= 320) {
+				if(baseFrameSize.Width >= 300) {
 					//H40 mode's pixel clock is MCLK/8 (H32 is MCLK/10), so its pixels are 4/5 as wide
 					return screenAspectRatio * (isPal ? (11.0 / 8.0) : (8.0 / 7.0)) * 4.0 / 5.0;
 				}

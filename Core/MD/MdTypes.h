@@ -22,9 +22,9 @@ public:
 	static constexpr uint32_t NtscScanlineCount = 262;
 	static constexpr uint32_t PalScanlineCount = 313;
 
-	//Output frame buffer: up to 320 pixels per line, up to 240 lines (x2 in interlace mode 2)
-	static constexpr uint32_t MaxScreenWidth = 320;
-	static constexpr uint32_t MaxScreenHeight = 480;
+	//Output frame buffer: up to 347 pixels per line (H40 + borders), up to 294 lines (PAL + borders) - doubled in interlaced modes
+	static constexpr uint32_t MaxScreenWidth = 347;
+	static constexpr uint32_t MaxScreenHeight = 588;
 	static constexpr uint32_t PixelCount = MdConstants::MaxScreenWidth * MdConstants::MaxScreenHeight;
 
 	static constexpr uint32_t WorkRamSize = 0x10000;

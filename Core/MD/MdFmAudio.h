@@ -23,6 +23,7 @@ private:
 	vector<int16_t> _samplesToPlay;
 	uint64_t _prevMasterClock = 0;
 	uint64_t _busyEndClock = 0;
+	bool _addressHigh = false;
 
 	//DC blocking filter, simulates the output's coupling capacitors (the YM2612's DAC output has a large DC offset)
 	double _prevInput[2] = {};

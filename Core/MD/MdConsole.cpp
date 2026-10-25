@@ -181,7 +181,8 @@ PpuFrameInfo MdConsole::GetPpuFrame()
 	frame.ScanlineCount = _vdp->GetScanlineCount();
 	frame.CycleCount = MdConstants::ClocksPerScanline;
 	frame.FrameBufferSize = frame.Width * frame.Height * sizeof(uint16_t);
-	frame.FrameBuffer = (uint8_t*)_vdp->GetScreenBuffer(false);
+	//The VDP swaps buffers as soon as a frame is completed
+	frame.FrameBuffer = (uint8_t*)_vdp->GetScreenBuffer(true);
 	return frame;
 }
 

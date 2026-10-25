@@ -214,32 +214,22 @@ uint32_t MdEventManager::TakeEventSnapshot(bool forAutoRefresh)
 
 	uint16_t cycle = _vdp->GetHClock();
 	uint16_t scanline = _vdp->GetScanline();
-	uint16_t activeLines = _vdp->GetActiveLineCount();
 
+	//Use the last completed frame (the VDP swaps its buffers as soon as a frame is completed)
 	_frameHeight = _vdp->GetScreenHeight();
-	_interlaceMode2 = _frameHeight > 240;
+	_interlaced = _frameHeight > 300;
 	uint32_t frameWidth = _vdp->GetScreenWidth();
-
-	//The last completed frame is in the current buffer during vblank, and in the previous buffer during the active display
-	bool inActiveDisplay = scanline < activeLines;
-	uint16_t* completedFrame = _vdp->GetScreenBuffer(inActiveDisplay);
-
-	uint32_t rowsPerLine = _interlaceMode2 ? 2 : 1;
-	uint32_t renderedRows = (inActiveDisplay && !(forAutoRefresh && scanline == 0 && cycle == 0)) ? scanline * rowsPerLine : 0;
-	uint16_t* renderBuffer = _vdp->GetRenderBuffer();
+	uint16_t* completedFrame = _vdp->GetScreenBuffer(true);
 
 	for(uint32_t row = 0; row < _frameHeight && row < MdConstants::MaxScreenHeight; row++) {
-		uint16_t* dst = _ppuBuffer + row * MdConstants::MaxScreenWidth;
-		if(row < renderedRows) {
-			//Use the lines that have already been rendered for the current frame
-			_rowWidths[row] = _vdp->GetRenderLineWidth(row);
-			memcpy(dst, renderBuffer + row * MdConstants::MaxScreenWidth, _rowWidths[row] * sizeof(uint16_t));
-		} else {
-			_rowWidths[row] = (uint16_t)frameWidth;
-			memcpy(dst, completedFrame + row * frameWidth, frameWidth * sizeof(uint16_t));
-		}
+		_rowWidths[row] = (uint16_t)frameWidth;
+		memcpy(_ppuBuffer + row * MdConstants::MaxScreenWidth, completedFrame + row * frameWidth, frameWidth * sizeof(uint16_t));
 	}
 
+	uint16_t leftBorder = _vdp->GetFrameLeftBorder();
+	_frameLeftBorder = leftBorder;
+	_frameActiveWidth = (uint16_t)(leftBorder > 0 ? frameWidth - leftBorder - MdVdp::RightBorder : frameWidth);
+	_frameTopBorder = _vdp->GetFrameTopBorder();
 	_activeStartColumn = _vdp->GetActiveDisplayStartClock() / MdEventManager::ClocksPerColumn;
 
 	_snapshotCurrentFrame = _debugEvents;
@@ -264,12 +254,16 @@ void MdEventManager::DrawScreen(uint32_t* buffer)
 	//The active display covers 2560 master clocks in both H32 and H40 modes
 	constexpr uint32_t screenColumns = 2560 / MdEventManager::ClocksPerColumn;
 
-	uint32_t rowCount = _interlaceMode2 ? _frameHeight : _frameHeight * 2;
-	for(uint32_t y = 0; y < rowCount && y < _scanlineCount * 2; y++) {
-		uint32_t srcRow = _interlaceMode2 ? y : (y >> 1);
-		uint16_t* src = _ppuBuffer + srcRow * MdConstants::MaxScreenWidth;
-		uint32_t rowWidth = _rowWidths[srcRow];
-		if(rowWidth == 0) {
+	//Event viewer rows are 2 per scanline, starting at the first line of the active display
+	uint32_t topRows = _interlaced ? _frameTopBorder * 2 : _frameTopBorder;
+	for(uint32_t y = 0; y < _scanlineCount * 2; y++) {
+		uint32_t srcRow = (_interlaced ? y : (y >> 1)) + topRows;
+		if(srcRow >= _frameHeight || srcRow >= MdConstants::MaxScreenHeight) {
+			break;
+		}
+
+		uint16_t* src = _ppuBuffer + srcRow * MdConstants::MaxScreenWidth + _frameLeftBorder;
+		if(_rowWidths[srcRow] == 0 || _frameActiveWidth == 0) {
 			continue;
 		}
 
@@ -278,7 +272,7 @@ void MdEventManager::DrawScreen(uint32_t* buffer)
 			if(column >= MdEventManager::ScanlineWidth) {
 				break;
 			}
-			buffer[y * MdEventManager::ScanlineWidth + column] = MdVdpTools::GetRgbColor(src[x * rowWidth / screenColumns]);
+			buffer[y * MdEventManager::ScanlineWidth + column] = MdVdpTools::GetRgbColor(src[x * _frameActiveWidth / screenColumns]);
 		}
 	}
 }

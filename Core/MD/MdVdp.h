@@ -10,14 +10,60 @@ class MdCpu;
 class MdZ80Cpu;
 class MdMemoryManager;
 
+//Sega 315-5313 VDP (mode 5)
+//Timing, border and debug register behavior is based on research by the Titan demo group (Overdrive 2)
+//and on jgenesis' implementation (GPLv3, https://github.com/jsgroth/jgenesis)
 class MdVdp final : public ISerializable
 {
+public:
+	//Border sizes, in pixels/lines
+	static constexpr uint16_t H32LeftBorder = 14;
+	static constexpr uint16_t H40LeftBorder = 13;
+	static constexpr uint16_t RightBorder = 14;
+	static constexpr uint16_t NtscTopBorder = 11;
+	static constexpr uint16_t NtscBottomBorder = 8;
+	static constexpr uint16_t PalV28TopBorder = 38;
+	static constexpr uint16_t PalV28BottomBorder = 32;
+	static constexpr uint16_t PalV30TopBorder = 30;
+	static constexpr uint16_t PalV30BottomBorder = 24;
+
 private:
-	enum class SlotType : uint8_t
+	static constexpr uint32_t BgBufferWidth = 320 + MdVdp::H40LeftBorder + MdVdp::RightBorder;
+	static constexpr uint8_t InitialFifoLatency = 3;
+
+	enum class Event : uint8_t
 	{
-		Other = 0,
-		External = 1,
-		Refresh = 2
+		VInterrupt,
+		ReadHScroll,
+		RenderLine,
+		FetchSpriteAttributes,
+		HBlankStart,
+		HInterrupt,
+		LatchRegisters,
+		None
+	};
+
+	struct EventTime
+	{
+		uint16_t H;
+		Event Type;
+	};
+
+	enum class DataLocation : uint8_t
+	{
+		Vram,
+		Vram8Bit,
+		Cram,
+		Vsram,
+		Invalid
+	};
+
+	enum class ForcedPlane : uint8_t
+	{
+		Backdrop = 0,
+		Sprite = 1,
+		PlaneA = 2,
+		PlaneB = 3
 	};
 
 	enum class PixelMode : uint8_t
@@ -27,26 +73,98 @@ private:
 		Highlight = 2
 	};
 
-	struct LineTiming
+	//Decoded register values
+	struct Regs
 	{
-		uint16_t PixelCount;
-		uint16_t SlotCount;
-		uint16_t VCounterChangePixel; //Linear pixel index where the V counter increments (start of a VDP "line" here)
-		uint16_t ActiveStart; //Linear pixel index of the first active display pixel
-		uint16_t Width;
-		uint16_t HBlankStart; //Internal H counter values
-		uint16_t HBlankEnd;
-		uint16_t PrepareSlot;
-		uint16_t FinishSlot;
-		uint16_t VerticalIrqSlot;
-		uint16_t SlotClock[211];
-		SlotType ActiveSlots[211];
-		SlotType BlankSlots[211];
-		uint16_t PixelAtClock[MdConstants::ClocksPerScanline];
+		bool HIntEnabled;
+		bool HvCounterStopped;
+		bool LeftColumnBlank;
+
+		bool DisplayEnabled;
+		bool VIntEnabled;
+		bool DmaEnabled;
+		bool V30;
+		bool Mode5;
+		bool Vram128k;
+
+		uint16_t PlaneATable;
+		uint16_t WindowTable;
+		uint16_t PlaneBTable;
+		uint32_t SpriteTable;
+		uint8_t BackdropColor;
+		uint8_t HIntInterval;
+
+		bool VScroll2Cell;
+		uint8_t HScrollMode;
+
+		bool H40;
+		bool ShadowHighlight;
+		uint8_t InterlaceMode; //0 = progressive, 1 = interlaced, 3 = interlaced double resolution
+
+		uint16_t HScrollTable;
+		uint8_t AutoIncrement;
+
+		uint8_t HScrollSize; //Raw register bits (0 = 32, 1 = 64, 2 = invalid, 3 = 128)
+		uint8_t VScrollSize;
+
+		bool WindowRight;
+		uint8_t WindowX; //In cells
+		bool WindowDown;
+		uint8_t WindowY; //In cells
 	};
 
-	static LineTiming _timings[2];
-	static bool _timingsInitialized;
+	struct FifoEntry
+	{
+		uint32_t Address;
+		uint16_t Value;
+		DataLocation Location;
+		bool IsWrite;
+		bool ByteWrite;
+		bool SecondHalf;
+		uint8_t Latency;
+	};
+
+	struct TilePixel
+	{
+		uint8_t Color;
+		uint8_t Palette;
+		bool Priority;
+	};
+
+	struct SpriteInfo
+	{
+		uint16_t Pattern;
+		uint16_t Y;
+		uint16_t X;
+		uint8_t WidthCells;
+		uint8_t HeightCells;
+		uint8_t Palette;
+		bool VFlip;
+		bool HFlip;
+		bool Priority;
+	};
+
+	struct SpriteBuffers
+	{
+		uint8_t ScannedIds[80];
+		uint8_t ScannedCount;
+		SpriteInfo Sprites[80];
+		uint8_t SpriteCount;
+		uint16_t LastTileAddresses[40];
+		TilePixel Pixels[320];
+	};
+
+	struct CramDot
+	{
+		uint16_t X;
+		uint16_t Color;
+	};
+
+	struct RasterLine
+	{
+		uint16_t Line;
+		bool InVBorder;
+	};
 
 	Emulator* _emu = nullptr;
 	MdConsole* _console = nullptr;
@@ -56,96 +174,182 @@ private:
 
 	MdVdpState _state = {};
 	uint64_t _lastMasterClock = 0;
-	uint64_t _lineStartClock = 0;
-	uint16_t _slotIndex = 0;
-	ConsoleRegion _region = ConsoleRegion::Ntsc;
+	bool _isPal = false;
 
 	uint8_t* _videoRam = nullptr;
-	uint8_t _colorRam[MdConstants::ColorRamSize] = {}; //Stored as big endian words (----bbb-ggg-rrr-)
-	uint8_t _vsRam[MdConstants::VsRamSize] = {}; //Stored as big endian words
-	uint8_t _spriteCache[80 * 4] = {}; //Internal copy of the first 4 bytes of each sprite attribute table entry
+	uint8_t _colorRam[MdConstants::ColorRamSize] = {}; //Big endian words (----bbb-ggg-rrr-)
+	uint8_t _vsRam[MdConstants::VsRamSize] = {}; //Big endian words
+	uint16_t _palette[0x40] = {}; //CRAM converted to the output format (BGR333)
+
+	//Internal sprite attribute cache (4 bytes per sprite: Y MSB, Y LSB, size, link) - updated on VRAM writes, latched at HINT
+	uint8_t _spriteCache[80 * 4] = {};
+	uint8_t _latchedSpriteCache[80 * 4] = {};
+
+	Regs _regs = {};
+	Regs _latched = {};
+	uint16_t _latchedHScroll[2] = {};
+	uint16_t _latchedVScroll[2] = {};
+	bool _debugDisplayDisabled = false;
+	ForcedPlane _forcedPlane = ForcedPlane::Backdrop;
+
+	//Line timing
+	uint16_t _pixel = 0;
+	uint8_t _eventIndex = 0;
+	EventTime _events[8] = {};
+	bool _inVblank = false;
+	bool _vBorderForgotten = false;
+	uint16_t _topBorder = MdVdp::NtscTopBorder;
+	bool _frameH40 = false;
+	bool _interlacedFrame = false;
+	bool _interlacedOdd = false;
+	uint8_t _lastScrollBPalettes[2] = {};
+
+	//Control port / FIFO / DMA
+	bool _dmaActive = false;
+	bool _isWriteMode = false;
+	uint8_t _locationBits = 0;
+	DataLocation _location = DataLocation::Vram;
+	uint32_t _controlAddress = 0;
+	uint32_t _dataAddress = 0;
+	bool _controlPending = false;
+
+	FifoEntry _fifo[4] = {};
+	uint8_t _fifoCount = 0;
+	uint8_t _fifoPopIndex = 0;
+	uint8_t _fifoPushIndex = 0;
+	uint8_t _dmaLatency = 0;
+	bool _fillDataReady = false;
+	uint16_t _fillData = 0;
+	bool _copyOddSlot = false;
+	bool _displayEnablePending = false;
+
+	uint32_t _dmaSource = 0;
+	uint16_t _dmaLength = 0;
+
+	bool _vIntPending = false;
+	bool _hIntPending = false;
+	uint16_t _hIntCounter = 0;
+	bool _z80IntActive = false;
+
+	uint16_t _hvLatch = 0;
+	bool _hvLatched = false;
+
+	//Sprites
+	SpriteBuffers _sprites = {};
+	SpriteBuffers _spritesOdd = {}; //Used for odd lines in interlace mode 2
+	bool _spriteOverflow = false;
+	bool _spriteCollision = false;
+	bool _dotOverflowOnPrevLine = false;
+	uint16_t _pixelsDisabledDuringHblank = 0;
+	bool _spriteDisplayEnabled = false;
+	uint16_t _displayEnabledPixel = 0;
+
+	//Rendering
+	TilePixel _planeAPixels[MdVdp::BgBufferWidth] = {};
+	TilePixel _planeBPixels[MdVdp::BgBufferWidth] = {};
+	CramDot _cramDots[32] = {};
+	uint8_t _cramDotCount = 0;
 
 	uint16_t* _outputBuffers[2] = {};
 	uint16_t* _currentOutputBuffer = nullptr;
-	uint16_t* _renderBuffer = nullptr;
-	uint16_t _lineWidths[MdConstants::MaxScreenHeight] = {};
-	uint32_t _frameWidth = 256;
+	uint32_t _frameWidth = 320;
 	uint32_t _frameHeight = 224;
-
-	//Per-frame/per-line latched timing values
-	bool _lineH40 = false;
-	bool _lineIsActive = false;
-	bool _frameV30 = false;
-	uint8_t _frameInterlaceMode = 0;
-	uint16_t _totalLines = MdConstants::NtscScanlineCount;
-	uint16_t _activeLines = 224;
-	uint16_t _vCounterJumpFrom = 0xEA;
-	uint16_t _vCounterJumpTo = 0x1E5;
-
-	bool _z80IrqActive = false;
-	uint64_t _z80IrqEndClock = 0;
-
-	//Line rendering
-	int16_t _renderLine = -1;
-	uint16_t _renderRow = 0;
-	uint16_t _renderWidth = 0;
-	uint16_t _compositedX = 0;
-	bool _prevLineDotOverflow = false;
-	uint8_t _lineA[MdConstants::MaxScreenWidth] = {};
-	uint8_t _lineB[MdConstants::MaxScreenWidth] = {};
-	uint8_t _lineS[MdConstants::MaxScreenWidth] = {};
-	uint16_t _palette[0x40] = {};
 
 	bool _disableSprites = false;
 	bool _disablePlaneA = false;
 	bool _disablePlaneB = false;
 	bool _disableWindow = false;
 	bool _removeSpriteLimit = false;
+	bool _showHorizontalBorder = false;
+	bool _showVerticalBorder = false;
 
-	static void InitTimings();
+	static void DecodeRegs(uint8_t* raw, Regs& regs);
+	void UpdateConfig();
+	void RefreshPalette();
 
+	//Timing
 	void Exec(uint64_t runTo);
+	void AdvanceToPixel(uint16_t endPixel);
+	void AdvanceToNextLine();
 	void ProcessSlot(uint16_t slot);
-	void StartLine();
-	void StartFrame();
+	void ProcessEvent(Event evt);
+	void UpdateEventTimes();
+	void HandleHResolutionChange();
 	void EndFrame();
-	void UpdateFrameTiming();
 
-	void ProcessExternalSlot();
-	bool DrainFifo();
-	void ProcessDmaFetch();
-	void ProcessDmaFillCopy();
-	void ProcessRead();
-	void UpdateDmaRegisters();
-	void PushFifo(uint16_t value);
+	uint16_t GetPixelsPerLine() { return _regs.H40 ? 420 : 342; }
+	uint16_t GetActivePixels(const Regs& regs) { return regs.H40 ? 320 : 256; }
+	uint16_t GetActiveScanlines(const Regs& regs) { return regs.V30 ? 240 : 224; }
+	uint16_t GetActiveStartH() { return _regs.H40 ? 0x01A : 0x018; }
+	uint16_t GetActiveEndH() { return _regs.H40 ? 0x15A : 0x118; }
+	uint16_t GetHInterruptH() { return _regs.H40 ? 0x14A : 0x10A; }
+	uint16_t GetLeftBorder(bool h40) { return h40 ? MdVdp::H40LeftBorder : MdVdp::H32LeftBorder; }
+	uint16_t GetTopBorder(bool v30);
+	uint16_t GetBottomBorder(bool v30);
+	uint16_t GetRenderedLinesPerFrame();
+	uint16_t GetScanlinesInFrame();
 
-	void WriteVramByte(uint16_t addr, uint8_t value);
-	void WriteCram(uint16_t addr, uint16_t value);
-	void WriteVsram(uint16_t addr, uint16_t value);
+	static uint16_t MclkToPixel(uint32_t mclk, bool h40);
+	static uint16_t PixelToInternalH(uint16_t pixel, bool h40);
+	static uint16_t InternalHToPixel(uint16_t h, bool h40);
+
+	uint16_t GetVCounter(uint32_t mclk, bool& vblankFlag);
+	uint16_t GetHvCounterAt(uint32_t mclk);
+	uint16_t GetStatus();
+
+	//FIFO / DMA
+	FifoEntry& GetFifoFront() { return _fifo[_fifoPopIndex]; }
+	uint16_t GetNextSlotWord() { return _fifo[_fifoPushIndex].Value; }
+	void PushFifo(FifoEntry entry);
+	void PopFifo();
+	FifoEntry CreateFifoEntry(uint16_t value);
+	void HandleAccessSlot();
+	void ProgressMemoryToVramDma(uint16_t slot, const bool* blankRefreshSlots);
+	void ProgressVramFillDma();
+	void ProgressVramCopyDma();
+	void IncrementDmaSource();
+	void DecrementDmaLength();
+	void UpdateSpriteCache(uint32_t addr, uint8_t value);
+	void WriteCram(uint8_t index, uint16_t value);
+	void WriteVsram(uint8_t index, uint16_t value);
+	static uint32_t Convert128kAddress(uint32_t addr);
+	static DataLocation ParseLocation(uint8_t bits, bool isWrite);
 
 	void WriteControlPort(uint16_t value);
 	void WriteDataPort(uint16_t value);
+	uint16_t ReadDataPort();
 	void WriteRegister(uint8_t reg, uint8_t value);
-	void UpdateDecodedRegisters();
+	void RelatchRegister(uint8_t reg, bool changed);
+	void RenderPartialLine(uint16_t fromPixel);
 	void UpdateIrqState();
-	void UpdateConfig();
+	void HandleDisplayEnableWrite(bool enabled);
+	void IncrementPixelsDisabled(uint16_t pixel);
 
-	uint16_t GetStatus();
-	uint16_t GetHCounter();
-	uint16_t GetVCounter();
-	uint16_t GetHvCounter();
-	bool IsInterlaceMode2() { return _frameInterlaceMode == 3; }
+	//Rendering
+	RasterLine GetRasterLine(uint16_t scanline);
+	int32_t GetFrameBufferRow(RasterLine line);
+	void RenderScanline(uint16_t scanline, uint16_t startPixel);
+	void DoRenderScanline(uint16_t scanline, RasterLine line, uint16_t startPixel, int32_t row, bool oddLine);
+	void RenderBackgrounds(uint16_t line, int16_t startCol, int16_t endCol, int16_t pixelOffset);
+	void RenderWindow(uint16_t line, int16_t startCol, int16_t endCol, int16_t pixelOffset);
+	void MergeLayers(RasterLine line, uint32_t row, uint32_t startCol, uint32_t endCol, int16_t pixelOffset, bool oddLine);
+	void RenderVerticalBorderLine(uint16_t scanline, uint32_t row, uint16_t startPixel);
+	void RenderLeftBorder(uint32_t row);
+	void RenderRightBorder(uint32_t row);
+	void RenderHorizontalBorderSpritePixel(uint32_t row, uint32_t col, uint16_t pixel, uint16_t baseSprite);
+	void FillRow(uint32_t row, uint16_t startPixel, uint8_t colorIndex);
+	void SetPixel(uint32_t row, uint32_t col, uint8_t colorIndex, PixelMode mode = PixelMode::Normal);
+	uint16_t ReadVScroll(uint8_t plane, int16_t column);
+	uint8_t GetBackdropIndex() { return _regs.BackdropColor; }
 
-	void PrepareLine();
-	void FinishLine();
-	void RenderPlane(uint8_t* out, bool planeA, uint16_t hscroll, uint16_t logicalLine, int16_t windowStart, int16_t windowEnd);
-	void RenderWindow(uint8_t* out, uint16_t logicalLine, int16_t windowStart, int16_t windowEnd);
-	void RenderSprites(uint16_t logicalLine);
-	uint16_t GetCurrentRenderX();
-	void CompositeTo(uint16_t x);
-	void RefreshPalette();
+	void ScanSprites(uint16_t scanline);
+	void DoSpriteScan(RasterLine line, SpriteBuffers& buffers);
+	void FetchSpriteAttributes();
+	void DoSpriteAttributeFetch(SpriteBuffers& buffers);
+	void RenderSpritePixels(RasterLine line, SpriteBuffers& buffers);
 
-	void BuildOutputFrame(uint16_t* out);
+	uint32_t GetCurrentScreenWidth();
+	uint32_t GetCurrentScreenHeight();
 
 public:
 	~MdVdp();
@@ -167,6 +371,9 @@ public:
 	uint16_t PeekPort(uint8_t port);
 	void WritePort(uint8_t port, uint16_t value);
 
+	//Undocumented debug register at $C0001C
+	void WriteDebugRegister(uint16_t value);
+
 	//Returns true when the 68000 must wait before performing the access (e.g full FIFO, read data not ready yet)
 	bool IsCpuWriteBlocked(uint8_t port);
 	bool IsCpuReadBlocked(uint8_t port);
@@ -184,24 +391,25 @@ public:
 	uint16_t GetScanline() { return _state.Scanline; }
 	uint16_t GetHClock() { return _state.HClock; }
 	uint16_t GetScanlineCount();
+	uint16_t GetActiveLineCount() { return GetActiveScanlines(_regs); }
+
+	//Position (in MCLK, relative to the start of the line) of the first active display pixel
+	uint16_t GetActiveDisplayStartClock();
 
 	//Size of the last completed frame
 	uint32_t GetScreenWidth();
 	uint32_t GetScreenHeight();
 
-	MdVdpState& GetState() { return _state; }
+	//Size of the borders included in the output frame (0 when borders are hidden)
+	uint16_t GetFrameLeftBorder() { return _showHorizontalBorder ? GetLeftBorder(_frameH40) : 0; }
+	uint16_t GetFrameTopBorder() { return _showVerticalBorder ? _topBorder : 0; }
+
+	MdVdpState& GetState();
 
 	uint8_t* GetVideoRam() { return _videoRam; }
 	uint8_t* GetColorRam() { return _colorRam; }
 	uint8_t* GetVsRam() { return _vsRam; }
-
-	//Debugger helpers
 	uint8_t* GetSpriteCache() { return _spriteCache; }
-	uint16_t* GetRenderBuffer() { return _renderBuffer; }
-	uint16_t GetRenderLineWidth(uint32_t row) { return row < MdConstants::MaxScreenHeight ? _lineWidths[row] : 0; }
-	uint16_t GetActiveLineCount() { return _activeLines; }
-	bool IsInterlaceMode2Frame() { return IsInterlaceMode2(); }
-	uint16_t GetActiveDisplayStartClock();
 
 	uint16_t* GetScreenBuffer(bool previousBuffer)
 	{

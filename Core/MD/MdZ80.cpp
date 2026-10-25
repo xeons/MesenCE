@@ -52,6 +52,11 @@ void MdZ80Cpu::SetReset(bool reset)
 	_state.Reset = reset;
 }
 
+void MdZ80Cpu::AddWaitCycles(uint8_t cycles)
+{
+	ExecCycles(cycles);
+}
+
 void MdZ80Cpu::WriteBankRegister(uint8_t value)
 {
 	//Each write shifts bit 0 into bit 8 of the 9-bit bank register

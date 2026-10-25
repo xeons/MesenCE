@@ -19,9 +19,8 @@ class MdControlManager;
 class MdMemoryManager final : public ISerializable
 {
 private:
-	//The 68000's DRAM refresh steals ~2 cycles every 128 cycles (approximation of the real behavior)
+	//The 68000 is stalled by DRAM refresh roughly every 128 cycles (approximation of the real behavior)
 	static constexpr uint32_t RefreshInterval = 128;
-	static constexpr uint32_t RefreshDelay = 2;
 
 	enum class MdPageType : uint8_t
 	{
@@ -43,13 +42,13 @@ private:
 	MdFmAudio* _fmAudio = nullptr;
 	MdControlManager* _controlManager = nullptr;
 
-	//Z80 bank accesses stall the 68000 while the Z80 uses its bus (approximation)
-	static constexpr uint32_t Z80BankAccessCpuStall = 6;
+	//Each Z80 access to the 68000's bus stalls the Z80 for ~3 cycles, and the 68000 for ~9.7 cycles on average
 	static constexpr uint8_t Z80BankAccessZ80Wait = 3;
 
 	MdMemoryManagerState _state = {};
 	uint64_t _masterClock = 0;
-	uint64_t _lastRefreshCycle = 0;
+	uint64_t _lastRefreshClock = 0;
+	uint8_t _z80StallCounter = 0;
 
 	//Set while the Z80 is accessing the 68000's bus (the Z80 can't be stalled by VDP waits like the 68000)
 	bool _inZ80Access = false;
@@ -104,16 +103,16 @@ private:
 
 	uint8_t ReadZ80Bank(uint16_t addr);
 	void WriteZ80Bank(uint16_t addr, uint8_t value);
+	void ProcessZ80BusAccess();
 
 	__forceinline void ProcessRefresh()
 	{
-		uint64_t cpuCycle = _masterClock / MdConstants::CpuDivider;
-		if(cpuCycle - _lastRefreshCycle >= MdMemoryManager::RefreshInterval) {
-			_lastRefreshCycle = cpuCycle;
-			Exec(MdMemoryManager::RefreshDelay);
+		if(_masterClock - _lastRefreshClock >= MdMemoryManager::RefreshInterval * MdConstants::CpuDivider) {
+			ApplyRefresh();
 		}
 	}
 
+	void ApplyRefresh();
 	void ProcessCpuStall();
 
 public:

@@ -14,86 +14,37 @@
 #include "Shared/RenderedFrame.h"
 #include "Utilities/Serializer.h"
 
-MdVdp::LineTiming MdVdp::_timings[2] = {};
-bool MdVdp::_timingsInitialized = false;
-
-void MdVdp::InitTimings()
+namespace
 {
-	if(_timingsInitialized) {
-		return;
-	}
+	struct SlotTables
+	{
+		bool H32Access[256] = {};
+		bool H40Access[256] = {};
+		bool H32BlankRefresh[256] = {};
+		bool H40BlankRefresh[256] = {};
 
-	for(int mode = 0; mode < 2; mode++) {
-		bool h40 = mode == 1;
-		LineTiming& t = _timings[mode];
-		t.PixelCount = h40 ? 420 : 342;
-		t.SlotCount = t.PixelCount / 2;
-		t.VCounterChangePixel = h40 ? 0x14A : 0x10A;
-		t.ActiveStart = h40 ? 13 : 11;
-		t.Width = h40 ? 320 : 256;
-		t.HBlankStart = h40 ? 0x166 : 0x126;
-		t.HBlankEnd = h40 ? 0x00B : 0x00A;
-
-		uint16_t n = t.PixelCount;
-		uint16_t columns = t.Width / 16;
-		uint16_t fetchStart = (t.ActiveStart + n - 16) % n;
-
-		//External access slots available during the blanking area of an active line (H40: 3, H32: 4)
-		constexpr uint16_t h40BlankExt[3] = { 12, 40, 72 };
-		constexpr uint16_t h32BlankExt[4] = { 12, 32, 52, 72 };
-
-		uint32_t clock = 0;
-		for(uint16_t q = 0; q < n; q++) {
-			uint16_t p = (q + t.VCounterChangePixel) % n;
-			if((q & 0x01) == 0) {
-				uint16_t slot = q >> 1;
-				t.SlotClock[slot] = (uint16_t)clock;
-
-				SlotType type = SlotType::Other;
-				uint16_t d = (p + n - fetchStart) % n;
-				if(d < columns * 16) {
-					//Each 2-cell column has 8 access slots: name A, ext/refresh, pattern A x2, name B, sprite, pattern B x2
-					uint16_t column = d / 16;
-					uint16_t sub = (d & 0x0F) >> 1;
-					if(sub == 1) {
-						type = (column & 0x03) == 0x03 ? SlotType::Refresh : SlotType::External;
-					}
-				} else {
-					uint16_t e = d - columns * 16;
-					if(h40) {
-						for(uint16_t ext : h40BlankExt) {
-							if(e == ext || e == ext + 1) {
-								type = SlotType::External;
-							}
-						}
-					} else {
-						for(uint16_t ext : h32BlankExt) {
-							if(e == ext || e == ext + 1) {
-								type = SlotType::External;
-							}
-						}
-					}
-				}
-
-				t.ActiveSlots[slot] = type;
-				t.BlankSlots[slot] = type == SlotType::Refresh ? SlotType::Refresh : SlotType::External;
+		SlotTables()
+		{
+			//External access slots during active display, indexed by pixel / 2 (pixel 0 = H counter 0)
+			//Adapted from https://gendev.spritesmind.net/forum/viewtopic.php?t=851
+			for(int slot : { 5, 13, 21, 37, 45, 53, 69, 77, 85, 101, 109, 117, 132, 133, 147, 161 }) {
+				H32Access[slot] = true;
+			}
+			for(int slot : { 6, 14, 22, 38, 46, 54, 70, 78, 86, 102, 110, 118, 134, 142, 150, 165, 166, 190 }) {
+				H40Access[slot] = true;
 			}
 
-			//H40 mode uses MCLK/10 for part of the HSYNC period, and MCLK/8 for the rest of the line
-			uint32_t pixelClocks = (h40 && !(p >= 374 && p < 404)) ? 8 : 10;
-			for(uint32_t i = 0; i < pixelClocks; i++) {
-				t.PixelAtClock[clock + i] = q;
+			//Refresh slots during blanking (all other slots are available for external accesses)
+			for(int slot : { 1, 33, 65, 97, 129 }) {
+				H32BlankRefresh[slot] = true;
 			}
-			clock += pixelClocks;
+			for(int slot : { 26, 58, 90, 122, 154, 204 }) {
+				H40BlankRefresh[slot] = true;
+			}
 		}
-		t.SlotClock[t.SlotCount] = MdConstants::ClocksPerScanline;
+	};
 
-		t.PrepareSlot = ((fetchStart + n - t.VCounterChangePixel) % n) >> 1;
-		t.FinishSlot = ((((t.ActiveStart + t.Width + n - t.VCounterChangePixel) % n) + 1) >> 1) % t.SlotCount;
-		t.VerticalIrqSlot = ((1 + n - t.VCounterChangePixel) % n) >> 1;
-	}
-
-	_timingsInitialized = true;
+	const SlotTables _slotTables;
 }
 
 void MdVdp::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, MdMemoryManager* memoryManager)
@@ -104,14 +55,10 @@ void MdVdp::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, M
 	_z80 = z80;
 	_memoryManager = memoryManager;
 
-	InitTimings();
-
 	_outputBuffers[0] = new uint16_t[MdConstants::PixelCount];
 	_outputBuffers[1] = new uint16_t[MdConstants::PixelCount];
-	_renderBuffer = new uint16_t[MdConstants::PixelCount];
 	memset(_outputBuffers[0], 0, MdConstants::PixelCount * sizeof(uint16_t));
 	memset(_outputBuffers[1], 0, MdConstants::PixelCount * sizeof(uint16_t));
-	memset(_renderBuffer, 0, MdConstants::PixelCount * sizeof(uint16_t));
 	_currentOutputBuffer = _outputBuffers[0];
 
 	_videoRam = new uint8_t[MdConstants::VideoRamSize];
@@ -131,13 +78,11 @@ void MdVdp::Init(Emulator* emu, MdConsole* console, MdCpu* cpu, MdZ80Cpu* z80, M
 	_emu->RegisterMemory(MemoryType::MdVsRam, _vsRam, MdConstants::VsRamSize);
 
 	_state = {};
-	UpdateDecodedRegisters();
-	_lineStartClock = 0;
-	_slotIndex = 0;
-	_lineH40 = false;
-	_lineIsActive = false;
-
-	UpdateFrameTiming();
+	DecodeRegs(_state.Regs, _regs);
+	_latched = _regs;
+	_topBorder = GetTopBorder(false);
+	UpdateEventTimes();
+	RefreshPalette();
 	UpdateConfig();
 }
 
@@ -146,7 +91,6 @@ MdVdp::~MdVdp()
 	delete[] _videoRam;
 	delete[] _outputBuffers[0];
 	delete[] _outputBuffers[1];
-	delete[] _renderBuffer;
 }
 
 void MdVdp::UpdateConfig()
@@ -157,152 +101,274 @@ void MdVdp::UpdateConfig()
 	_disablePlaneB = cfg.DisablePlaneB;
 	_disableWindow = cfg.DisableWindow;
 	_removeSpriteLimit = cfg.RemoveSpriteLimit;
+	_showHorizontalBorder = cfg.ShowHorizontalBorder;
+	_showVerticalBorder = cfg.ShowVerticalBorder;
 }
 
 void MdVdp::SetRegion(ConsoleRegion region)
 {
-	_region = region;
-	UpdateFrameTiming();
+	_isPal = region == ConsoleRegion::Pal;
+	_topBorder = GetTopBorder(_regs.V30);
 }
 
-void MdVdp::UpdateFrameTiming()
+void MdVdp::DecodeRegs(uint8_t* r, Regs& regs)
 {
-	bool pal = _region == ConsoleRegion::Pal;
-	_frameV30 = _state.V30Mode;
-	_frameInterlaceMode = _state.InterlaceMode;
-	bool interlaced = _frameInterlaceMode == 1 || _frameInterlaceMode == 3;
+	regs.HIntEnabled = r[0] & 0x10;
+	regs.HvCounterStopped = r[0] & 0x02;
+	regs.LeftColumnBlank = r[0] & 0x20;
 
-	_activeLines = _frameV30 ? 240 : 224;
-	_totalLines = (pal ? MdConstants::PalScanlineCount : MdConstants::NtscScanlineCount) + ((interlaced && !_state.OddFrame) ? 1 : 0);
+	regs.DisplayEnabled = r[1] & 0x40;
+	regs.VIntEnabled = r[1] & 0x20;
+	regs.DmaEnabled = r[1] & 0x10;
+	regs.V30 = r[1] & 0x08;
+	regs.Mode5 = r[1] & 0x04;
+	regs.Vram128k = r[1] & 0x80;
 
-	if(pal) {
-		_vCounterJumpFrom = _frameV30 ? 0x10A : 0x102;
+	regs.H40 = (r[12] & 0x81) != 0;
+	regs.ShadowHighlight = r[12] & 0x08;
+	uint8_t interlace = (r[12] >> 1) & 0x03;
+	regs.InterlaceMode = interlace == 2 ? 0 : interlace;
+
+	regs.PlaneATable = (r[2] & 0x38) << 10;
+	regs.WindowTable = ((r[3] & 0x3E) << 10) & (regs.H40 ? 0xF000 : 0xF800);
+	regs.PlaneBTable = (r[4] & 0x07) << 13;
+	regs.SpriteTable = ((uint32_t)r[5] << 9) & (regs.H40 ? ~0x3FFu : ~0u);
+	regs.BackdropColor = r[7] & 0x3F;
+	regs.HIntInterval = r[10];
+
+	regs.VScroll2Cell = r[11] & 0x04;
+	regs.HScrollMode = r[11] & 0x03;
+
+	regs.HScrollTable = (r[13] & 0x3F) << 10;
+	regs.AutoIncrement = r[15];
+
+	regs.HScrollSize = r[16] & 0x03;
+	regs.VScrollSize = (r[16] >> 4) & 0x03;
+
+	regs.WindowRight = r[17] & 0x80;
+	regs.WindowX = (r[17] & 0x1F) << 1;
+	regs.WindowDown = r[18] & 0x80;
+	regs.WindowY = r[18] & 0x1F;
+}
+
+void MdVdp::RefreshPalette()
+{
+	for(int i = 0; i < 0x40; i++) {
+		uint16_t value = (_colorRam[i * 2] << 8) | _colorRam[i * 2 + 1];
+		_palette[i] = ((value >> 3) & 0x1C0) | ((value >> 2) & 0x38) | ((value >> 1) & 0x07);
+	}
+}
+
+uint16_t MdVdp::GetTopBorder(bool v30)
+{
+	if(!_isPal) {
+		return MdVdp::NtscTopBorder;
+	}
+	return v30 ? MdVdp::PalV30TopBorder : MdVdp::PalV28TopBorder;
+}
+
+uint16_t MdVdp::GetBottomBorder(bool v30)
+{
+	if(!_isPal) {
+		return MdVdp::NtscBottomBorder;
+	}
+	return v30 ? MdVdp::PalV30BottomBorder : MdVdp::PalV28BottomBorder;
+}
+
+uint16_t MdVdp::GetRenderedLinesPerFrame()
+{
+	return _isPal ? (224 + MdVdp::PalV28TopBorder + MdVdp::PalV28BottomBorder) : (224 + MdVdp::NtscTopBorder + MdVdp::NtscBottomBorder);
+}
+
+uint16_t MdVdp::GetScanlinesInFrame()
+{
+	if(_isPal) {
+		return MdConstants::PalScanlineCount - 1 + ((!_interlacedFrame || _interlacedOdd) ? 1 : 0);
 	} else {
-		//V30 on NTSC is invalid, the V counter never jumps
-		_vCounterJumpFrom = _frameV30 ? 0x1FF : 0xEA;
+		return MdConstants::NtscScanlineCount + ((_interlacedFrame && _interlacedOdd) ? 1 : 0);
+	}
+}
+
+uint16_t MdVdp::GetScanlineCount()
+{
+	return GetScanlinesInFrame();
+}
+
+uint16_t MdVdp::MclkToPixel(uint32_t mclk, bool h40)
+{
+	if(!h40) {
+		//H32 pixel clock is always MCLK/10
+		return (uint16_t)(mclk / 10);
 	}
 
-	if(_vCounterJumpFrom >= _totalLines) {
-		_vCounterJumpTo = _vCounterJumpFrom + 1;
+	//H40: the pixel clock is MCLK/8, except during HSYNC where it follows a pattern of
+	//1 pixel at MCLK/8, 7 at MCLK/10, 2 at MCLK/9, 7 at MCLK/10 (repeated twice)
+	constexpr uint32_t jumpDiff = 0x1C9 - 0x16D;
+	constexpr uint32_t hsyncStart = (0x1CC - jumpDiff) * 8;
+	constexpr uint32_t patternLength = 8 + 7 * 10 + 2 * 9 + 7 * 10;
+	constexpr uint32_t hsyncEnd = hsyncStart + 2 * patternLength;
+
+	if(mclk < hsyncStart) {
+		return (uint16_t)(mclk / 8);
+	} else if(mclk < hsyncEnd) {
+		uint32_t hsyncMclk = mclk - hsyncStart;
+		uint32_t patternMclk = hsyncMclk % patternLength;
+		uint32_t patternPixel;
+		if(patternMclk < 8) {
+			patternPixel = 0;
+		} else if(patternMclk < 78) {
+			patternPixel = 1 + (patternMclk - 8) / 10;
+		} else if(patternMclk < 96) {
+			patternPixel = 8 + (patternMclk - 78) / 9;
+		} else {
+			patternPixel = 10 + (patternMclk - 96) / 10;
+		}
+		return (uint16_t)(0x1CC - jumpDiff + (hsyncMclk < patternLength ? 0 : 17) + patternPixel);
 	} else {
-		_vCounterJumpTo = 0x200 - (_totalLines - _vCounterJumpFrom - 1);
+		return (uint16_t)(0x1CC - jumpDiff + 34 + (mclk - hsyncEnd) / 8);
 	}
+}
+
+uint16_t MdVdp::PixelToInternalH(uint16_t pixel, bool h40)
+{
+	if(h40) {
+		return pixel <= 0x16C ? pixel : pixel + (0x1C9 - 0x16D);
+	} else {
+		return pixel <= 0x127 ? pixel : pixel + (0x1D2 - 0x128);
+	}
+}
+
+uint16_t MdVdp::InternalHToPixel(uint16_t h, bool h40)
+{
+	if(h40) {
+		return h <= 0x16C ? h : h - (0x1C9 - 0x16D);
+	} else {
+		return h <= 0x127 ? h : h - (0x1D2 - 0x128);
+	}
+}
+
+void MdVdp::UpdateEventTimes()
+{
+	bool h40 = _regs.H40;
+	uint16_t activeStart = h40 ? 0x01A : 0x018;
+	uint16_t activeEnd = h40 ? 0x15A : 0x118;
+
+	_events[0] = { (uint16_t)(h40 ? 0x002 : 0x001), Event::VInterrupt };
+	_events[1] = { (uint16_t)(activeStart - 24), Event::ReadHScroll };
+	_events[2] = { activeStart, Event::RenderLine };
+	_events[3] = { (uint16_t)(activeEnd - 24), Event::FetchSpriteAttributes };
+	_events[4] = { (uint16_t)(activeEnd - 16), Event::HBlankStart };
+	_events[5] = { (uint16_t)(h40 ? 0x14A : 0x10A), Event::HInterrupt };
+	_events[6] = { (uint16_t)(h40 ? 0x169 : 0x121), Event::LatchRegisters };
+	_events[7] = { 0xFFFF, Event::None };
+
+	std::stable_sort(std::begin(_events), std::end(_events), [](const EventTime& a, const EventTime& b) { return a.H < b.H; });
 }
 
 void MdVdp::Exec(uint64_t runTo)
 {
-	while(true) {
-		const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
-		uint64_t lineEnd = _lineStartClock + MdConstants::ClocksPerScanline;
-		uint64_t target = std::min(runTo, lineEnd);
-		uint16_t offset = (uint16_t)(target - _lineStartClock);
+	while(_lastMasterClock < runTo) {
+		uint64_t step = std::min<uint64_t>(runTo - _lastMasterClock, MdConstants::ClocksPerScanline - _state.HClock);
+		_state.HClock += (uint16_t)step;
+		_lastMasterClock += step;
 
-		while(_slotIndex < timing.SlotCount && timing.SlotClock[_slotIndex] <= offset) {
-			_state.HClock = timing.SlotClock[_slotIndex];
-			ProcessSlot(_slotIndex);
-			_slotIndex++;
-		}
-
-		if(target == lineEnd) {
-			_lineStartClock = lineEnd;
-			_slotIndex = 0;
+		if(_state.HClock >= MdConstants::ClocksPerScanline) {
+			AdvanceToPixel(GetPixelsPerLine());
 			_state.HClock = 0;
-			StartLine();
+			AdvanceToNextLine();
 		} else {
-			_state.HClock = offset;
-		}
-
-		if(target == runTo) {
-			break;
+			AdvanceToPixel(MclkToPixel(_state.HClock, _regs.H40));
 		}
 	}
+}
 
-	_lastMasterClock = runTo;
+void MdVdp::AdvanceToPixel(uint16_t endPixel)
+{
+	bool h40 = _regs.H40;
+	while(_pixel < endPixel) {
+		if((_pixel & 0x01) == 0) {
+			if(_dmaActive || _fifoCount > 0) {
+				ProcessSlot(_pixel >> 1);
+			}
+			_emu->ProcessPpuCycle<CpuType::Md>();
+		}
+
+		uint16_t h = PixelToInternalH(_pixel, h40);
+		while(h >= _events[_eventIndex].H) {
+			Event evt = _events[_eventIndex].Type;
+			_eventIndex++;
+			ProcessEvent(evt);
+		}
+
+		_pixel++;
+	}
 }
 
 void MdVdp::ProcessSlot(uint16_t slot)
 {
-	const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
+	const bool* access = _regs.H40 ? _slotTables.H40Access : _slotTables.H32Access;
+	const bool* blankRefresh = _regs.H40 ? _slotTables.H40BlankRefresh : _slotTables.H32BlankRefresh;
+	bool isBlankRefresh = blankRefresh[slot];
 
-	if(slot == timing.FinishSlot && _renderLine >= 0) {
-		FinishLine();
+	if(!isBlankRefresh) {
+		//DMA reads must happen before the FIFO pop
+		ProgressMemoryToVramDma(slot, blankRefresh);
 	}
 
-	if(slot == timing.PrepareSlot && _state.Scanline < _activeLines) {
-		PrepareLine();
+	bool blank = !_regs.DisplayEnabled || _inVblank;
+	if((blank && !isBlankRefresh) || (!blank && access[slot])) {
+		HandleAccessSlot();
 	}
 
-	if(slot == timing.VerticalIrqSlot && _state.Scanline == _activeLines) {
-		_state.VerticalIrqPending = true;
-		UpdateIrqState();
-
-		_z80->SetIrqSource(MdZ80IrqSource::Vdp);
-		_z80IrqActive = true;
-		_z80IrqEndClock = _lineStartClock + _state.HClock + 2565;
-
-		_console->RefreshRamCheats();
-	}
-
-	if(_z80IrqActive && _lineStartClock + _state.HClock >= _z80IrqEndClock) {
-		_z80->ClearIrqSource(MdZ80IrqSource::Vdp);
-		_z80IrqActive = false;
-	}
-
-	SlotType type = _lineIsActive ? timing.ActiveSlots[slot] : timing.BlankSlots[slot];
-	if(type == SlotType::External) {
-		ProcessExternalSlot();
-	}
-
-	_emu->ProcessPpuCycle<CpuType::Md>();
-}
-
-void MdVdp::StartLine()
-{
-	_state.Scanline++;
-	if(_state.Scanline >= _totalLines) {
-		_state.Scanline = 0;
-		StartFrame();
-	}
-
-	uint16_t line = _state.Scanline;
-	_lineH40 = _state.H40Mode;
-	_lineIsActive = _state.DisplayEnabled && (line < _activeLines || line == _totalLines - 1);
-
-	//The H counter is decremented on lines 0 to 224 (or 240), and reloaded on all other lines
-	uint16_t prevLine = line == 0 ? 0xFFFF : line - 1;
-	if(prevLine <= _activeLines) {
-		if(_state.HIntCounter == 0) {
-			_state.HIntCounter = _state.Regs[10];
-			_state.HorizontalIrqPending = true;
-			UpdateIrqState();
-		} else {
-			_state.HIntCounter--;
+	if(!isBlankRefresh) {
+		for(uint8_t i = 0; i < _fifoCount; i++) {
+			FifoEntry& entry = _fifo[(_fifoPopIndex + i) & 0x03];
+			if(entry.Latency > 0) {
+				entry.Latency--;
+			}
 		}
-	} else {
-		_state.HIntCounter = _state.Regs[10];
 	}
-
-	if(line == _activeLines) {
-		_state.InVerticalBlank = true;
-	} else if(line == _totalLines - 1) {
-		_state.InVerticalBlank = false;
-	}
-
-	_state.VCounter = GetVCounter();
 }
 
-void MdVdp::StartFrame()
+void MdVdp::AdvanceToNextLine()
 {
-	if(_state.InterlaceMode == 1 || _state.InterlaceMode == 3) {
-		_state.OddFrame = !_state.OddFrame;
-	} else {
-		_state.OddFrame = false;
+	uint16_t scanlinesInFrame = GetScanlinesInFrame();
+
+	_eventIndex = 0;
+	_pixel = 0;
+	_state.Scanline++;
+
+	if(_z80IntActive) {
+		//The Z80's INT line is only held during the first line of vertical blank
+		_z80->ClearIrqSource(MdZ80IrqSource::Vdp);
+		_z80IntActive = false;
 	}
 
-	UpdateFrameTiming();
+	if(_state.Scanline >= scanlinesInFrame) {
+		_state.Scanline = 0;
+		_vBorderForgotten = false;
 
-	_currentOutputBuffer = _currentOutputBuffer == _outputBuffers[0] ? _outputBuffers[1] : _outputBuffers[0];
-	_emu->ProcessEvent(EventType::StartFrame, CpuType::Md);
+		bool interlaced = _regs.InterlaceMode != 0;
+		if(interlaced && !_interlacedFrame) {
+			_interlacedOdd = false;
+		}
+		_interlacedFrame = interlaced;
+
+		//The top border's size is latched at the start of the frame (Overdrive 2's arcade scene switches between V28 and V30 mid-frame)
+		_topBorder = GetTopBorder(_regs.V30);
+		_frameH40 = _regs.H40;
+
+		_emu->ProcessEvent(EventType::StartFrame, CpuType::Md);
+	} else if(_interlacedFrame) {
+		uint16_t toggleLine = _regs.V30 ? 256 : 240;
+		if(_state.Scanline == toggleLine) {
+			_interlacedOdd = !_interlacedOdd;
+		}
+	}
+
+	if(_state.Scanline == GetRenderedLinesPerFrame() - _topBorder) {
+		EndFrame();
+	}
 }
 
 void MdVdp::EndFrame()
@@ -310,7 +376,8 @@ void MdVdp::EndFrame()
 	_emu->ProcessEvent(EventType::EndFrame, CpuType::Md);
 	_state.FrameCount++;
 
-	BuildOutputFrame(_currentOutputBuffer);
+	_frameWidth = GetCurrentScreenWidth();
+	_frameHeight = GetCurrentScreenHeight();
 
 	_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::PpuFrameDone);
 
@@ -318,262 +385,218 @@ void MdVdp::EndFrame()
 	bool rewinding = _emu->GetRewindManager()->IsRewinding();
 	_emu->GetVideoDecoder()->UpdateFrame(frame, rewinding, rewinding);
 
+	uint16_t* completedFrame = _currentOutputBuffer;
+	_currentOutputBuffer = _currentOutputBuffer == _outputBuffers[0] ? _outputBuffers[1] : _outputBuffers[0];
+	if(_interlacedFrame) {
+		//Interlaced frames only render every other line, keep the lines from the previous field
+		memcpy(_currentOutputBuffer, completedFrame, MdConstants::PixelCount * sizeof(uint16_t));
+	}
+
 	UpdateConfig();
 
 	_emu->ProcessEndOfFrame();
 	_console->ProcessEndOfFrame();
 }
 
-void MdVdp::BuildOutputFrame(uint16_t* out)
+void MdVdp::ProcessEvent(Event evt)
 {
-	_frameHeight = _activeLines * (IsInterlaceMode2() ? 2 : 1);
+	switch(evt) {
+		case Event::VInterrupt:
+			if(_state.Scanline == GetActiveScanlines(_regs)) {
+				_vIntPending = true;
+				UpdateIrqState();
 
-	uint32_t width = 256;
-	for(uint32_t row = 0; row < _frameHeight; row++) {
-		width = std::max<uint32_t>(width, _lineWidths[row]);
-	}
-	_frameWidth = width;
+				_z80->SetIrqSource(MdZ80IrqSource::Vdp);
+				_z80IntActive = true;
 
-	for(uint32_t row = 0; row < _frameHeight; row++) {
-		uint16_t* src = _renderBuffer + row * MdConstants::MaxScreenWidth;
-		uint16_t* dst = out + row * width;
-		uint32_t lineWidth = _lineWidths[row];
-		if(lineWidth == width) {
-			memcpy(dst, src, width * sizeof(uint16_t));
-		} else if(lineWidth == 0) {
-			memset(dst, 0, width * sizeof(uint16_t));
-		} else {
-			//Line was rendered in H32 mode in a frame that also contains H40 lines, stretch it
-			for(uint32_t x = 0; x < width; x++) {
-				dst[x] = src[x * lineWidth / width];
+				//Latch the horizontal resolution at the start of vertical blank
+				_frameH40 = _regs.H40;
+
+				_console->RefreshRamCheats();
 			}
-		}
-	}
-}
-
-void MdVdp::DebugSendFrame()
-{
-	BuildOutputFrame(_currentOutputBuffer);
-	RenderedFrame frame(_currentOutputBuffer, _frameWidth, _frameHeight, 1.0, _state.FrameCount);
-	_emu->GetVideoDecoder()->UpdateFrame(frame, false, false);
-}
-
-void MdVdp::ProcessExternalSlot()
-{
-	bool slotUsed = false;
-	if(_state.FifoCount > 0) {
-		slotUsed = DrainFifo();
-	}
-
-	if(_state.DmaActive) {
-		if(_state.DmaMode == MdVdpDmaMode::MemoryToVram) {
-			//Fetching from the 68000's bus does not use a VRAM access slot - the FIFO entries are written in later slots
-			if(_state.FifoCount < 4) {
-				ProcessDmaFetch();
-			}
-		} else if(!slotUsed && _state.FifoCount == 0) {
-			ProcessDmaFillCopy();
-		}
-	} else if(!slotUsed && _state.ReadPending && !_state.ReadBufferValid && _state.FifoCount == 0) {
-		ProcessRead();
-	}
-}
-
-bool MdVdp::DrainFifo()
-{
-	MdVdpFifoEntry& entry = _state.Fifo[_state.FifoReadPos];
-	switch(entry.Code & 0x0F) {
-		case 0x01:
-			//VRAM is accessed one byte at a time, a word write takes 2 slots
-			if(!entry.HalfWritten) {
-				WriteVramByte(entry.Address & 0xFFFF, entry.Value >> 8);
-				entry.HalfWritten = true;
-				return true;
-			}
-			WriteVramByte((entry.Address ^ 0x01) & 0xFFFF, (uint8_t)entry.Value);
 			break;
 
-		case 0x03: WriteCram(entry.Address, entry.Value); break;
-		case 0x05: WriteVsram(entry.Address, entry.Value); break;
-		default: break;
-	}
+		case Event::ReadHScroll: {
+			if(!_regs.DisplayEnabled || (_state.Scanline >= GetActiveScanlines(_latched) && !_vBorderForgotten)) {
+				break;
+			}
 
-	_state.LastFifoValue = entry.Value;
-	_state.FifoReadPos = (_state.FifoReadPos + 1) & 0x03;
-	_state.FifoCount--;
-	return true;
-}
+			//Only the lowest 8 bits of the raster line are used for H scroll lookups
+			uint16_t line = GetRasterLine(_state.Scanline).Line & 0xFF;
+			uint16_t addr = _regs.HScrollTable;
+			switch(_regs.HScrollMode) {
+				default:
+				case 0: break;
+				case 1: addr += 4 * (line & 0x07); break;
+				case 2: addr += 32 * (line / 8); break;
+				case 3: addr += 4 * line; break;
+			}
 
-void MdVdp::PushFifo(uint16_t value)
-{
-	if(_state.FifoCount >= 4) {
-		//Can only happen with Z80 writes, which do not wait for the FIFO
-		return;
-	}
-
-	MdVdpFifoEntry& entry = _state.Fifo[(_state.FifoReadPos + _state.FifoCount) & 0x03];
-	entry.Address = _state.AddressReg;
-	entry.Value = value;
-	entry.Code = _state.CodeReg & 0x0F;
-	entry.HalfWritten = false;
-	_state.FifoCount++;
-
-	_state.AddressReg = (_state.AddressReg + _state.AddressIncrement) & 0x1FFFF;
-}
-
-void MdVdp::ProcessDmaFetch()
-{
-	uint16_t value = _memoryManager->ReadDma(_state.DmaSource & 0xFFFFFF);
-	PushFifo(value);
-
-	//The source address wraps around at 128KB boundaries
-	_state.DmaSource = (_state.DmaSource & 0xFE0000) | ((_state.DmaSource + 2) & 0x1FFFF);
-	if(--_state.DmaLength == 0) {
-		_state.DmaActive = false;
-	}
-	UpdateDmaRegisters();
-}
-
-void MdVdp::ProcessDmaFillCopy()
-{
-	if(_state.DmaMode == MdVdpDmaMode::VramFill) {
-		switch(_state.CodeReg & 0x0F) {
-			case 0x01: WriteVramByte(_state.AddressReg & 0xFFFF, _state.DmaFillValue >> 8); break;
-			case 0x03: WriteCram(_state.AddressReg, _state.DmaFillValue); break;
-			case 0x05: WriteVsram(_state.AddressReg, _state.DmaFillValue); break;
-			default: break;
+			_latchedHScroll[0] = ((_videoRam[addr & 0xFFFF] << 8) | _videoRam[(addr + 1) & 0xFFFF]) & 0x3FF;
+			_latchedHScroll[1] = ((_videoRam[(addr + 2) & 0xFFFF] << 8) | _videoRam[(addr + 3) & 0xFFFF]) & 0x3FF;
+			break;
 		}
-		_state.AddressReg = (_state.AddressReg + _state.AddressIncrement) & 0x1FFFF;
-		if(--_state.DmaLength == 0) {
-			_state.DmaActive = false;
+
+		case Event::RenderLine: {
+			if(!_spriteDisplayEnabled) {
+				IncrementPixelsDisabled(_pixel);
+			}
+
+			//Sprite processing phase 1 (sprite scan for the next line)
+			uint16_t nextLine = _state.Scanline == GetScanlinesInFrame() - 1 ? 0 : _state.Scanline + 1;
+			ScanSprites(nextLine);
+
+			_cramDotCount = 0;
+			RenderScanline(_state.Scanline, 0);
+			break;
 		}
+
+		case Event::FetchSpriteAttributes:
+			//Sprite processing phase 2
+			FetchSpriteAttributes();
+			break;
+
+		case Event::HBlankStart: {
+			_pixelsDisabledDuringHblank = 0;
+			_spriteDisplayEnabled = _regs.DisplayEnabled;
+			_displayEnabledPixel = GetActiveEndH() - 16;
+
+			uint16_t active = GetActiveScanlines(_regs);
+			if(_state.Scanline == active - 1 || (_vBorderForgotten && _state.Scanline == 239)) {
+				_inVblank = true;
+			} else if(_state.Scanline == GetScanlinesInFrame() - 2) {
+				_inVblank = false;
+			}
+			break;
+		}
+
+		case Event::HInterrupt: {
+			memcpy(_latchedSpriteCache, _spriteCache, sizeof(_spriteCache));
+
+			uint16_t active = GetActiveScanlines(_regs);
+			if(_state.Scanline < active || _state.Scanline == GetScanlinesInFrame() - 1 || _vBorderForgotten) {
+				if(_hIntCounter == 0) {
+					_hIntCounter = _regs.HIntInterval;
+					_hIntPending = true;
+					UpdateIrqState();
+				} else {
+					_hIntCounter--;
+				}
+			} else {
+				//The counter is reloaded on every line during vertical blank
+				_hIntCounter = _regs.HIntInterval;
+			}
+			break;
+		}
+
+		case Event::LatchRegisters:
+			//Most registers (and the full screen V scroll values) are latched shortly after HINT, and only take effect on the next line
+			_latched = _regs;
+			_latchedVScroll[0] = (_vsRam[0] << 8) | _vsRam[1];
+			_latchedVScroll[1] = (_vsRam[2] << 8) | _vsRam[3];
+			break;
+
+		case Event::None:
+			break;
+	}
+}
+
+void MdVdp::HandleHResolutionChange()
+{
+	bool h40 = _regs.H40;
+	_pixel = MclkToPixel(_state.HClock, h40);
+	uint16_t h = PixelToInternalH(_pixel, h40);
+
+	uint16_t effectiveLine = h >= (GetActiveEndH() - 16) ? _state.Scanline + 1 : _state.Scanline;
+	uint16_t active = GetActiveScanlines(_regs);
+	_inVblank = effectiveLine >= active && effectiveLine < GetScanlinesInFrame() - 1;
+
+	UpdateEventTimes();
+	_eventIndex = 0;
+	while(h >= _events[_eventIndex].H) {
+		_eventIndex++;
+	}
+}
+
+uint16_t MdVdp::GetVCounter(uint32_t mclk, bool& vblankFlag)
+{
+	uint32_t divider = _regs.H40 ? 8 : 10;
+	bool pastHint = mclk >= (uint32_t)GetHInterruptH() * divider;
+	uint16_t scanlinesInFrame = GetScanlinesInFrame();
+	uint16_t line = _state.Scanline;
+	if(pastHint) {
+		line = line >= scanlinesInFrame - 1 ? 0 : line + 1;
+	}
+
+	uint16_t active = _isPal ? GetActiveScanlines(_regs) : 224;
+	if(!_interlacedFrame || _regs.InterlaceMode == 0) {
+		uint16_t threshold = !_isPal ? 0xEA : (_regs.V30 ? 0x10A : 0x102);
+		uint16_t total = _isPal ? MdConstants::PalScanlineCount : MdConstants::NtscScanlineCount;
+		uint16_t counter = line <= threshold ? line : ((line - total) & 0x1FF);
+		vblankFlag = counter >= active && counter != 0x1FF;
+		return counter & 0xFF;
 	} else {
-		//VRAM copy: read and write each take a slot
-		if(!_state.DmaCopyHasByte) {
-			_state.DmaCopyByte = _videoRam[_state.DmaSource & 0xFFFF];
-			_state.DmaCopyHasByte = true;
-			return;
-		}
-
-		WriteVramByte(_state.AddressReg & 0xFFFF, _state.DmaCopyByte);
-		_state.DmaCopyHasByte = false;
-		_state.DmaSource = (_state.DmaSource + 1) & 0xFFFF;
-		_state.AddressReg = (_state.AddressReg + _state.AddressIncrement) & 0x1FFFF;
-		if(--_state.DmaLength == 0) {
-			_state.DmaActive = false;
+		uint16_t threshold = !_isPal ? 0xEA : (_regs.V30 ? 0x109 : 0x101);
+		uint16_t internal = line <= threshold ? line : ((line - scanlinesInFrame) & 0x1FF);
+		vblankFlag = internal >= active && internal != 0x1FF;
+		if(_regs.InterlaceMode == 3) {
+			return ((internal << 1) & 0xFE) | ((internal >> 7) & 0x01);
+		} else {
+			return (internal & 0xFE) | ((internal >> 8) & 0x01);
 		}
 	}
-	UpdateDmaRegisters();
 }
 
-void MdVdp::UpdateDmaRegisters()
+uint16_t MdVdp::GetHvCounterAt(uint32_t mclk)
 {
-	_state.Regs[19] = (uint8_t)_state.DmaLength;
-	_state.Regs[20] = (uint8_t)(_state.DmaLength >> 8);
-	if(_state.DmaMode == MdVdpDmaMode::MemoryToVram) {
-		_state.Regs[21] = (uint8_t)(_state.DmaSource >> 1);
-		_state.Regs[22] = (uint8_t)(_state.DmaSource >> 9);
-	} else if(_state.DmaMode == MdVdpDmaMode::VramCopy) {
-		_state.Regs[21] = (uint8_t)_state.DmaSource;
-		_state.Regs[22] = (uint8_t)(_state.DmaSource >> 8);
+	if(_hvLatched) {
+		return _hvLatch;
 	}
+
+	bool vblank;
+	uint16_t vc = GetVCounter(mclk, vblank);
+	uint16_t h = PixelToInternalH(MclkToPixel(mclk, _regs.H40), _regs.H40);
+	return ((vc & 0xFF) << 8) | ((h >> 1) & 0xFF);
 }
 
-void MdVdp::ProcessRead()
+uint16_t MdVdp::GetStatus()
 {
-	uint16_t addr = (uint16_t)_state.AddressReg;
-	uint16_t value;
-	switch(_state.CodeReg & 0x0F) {
-		case 0x00: value = (_videoRam[addr & 0xFFFE] << 8) | _videoRam[(addr & 0xFFFE) + 1]; break;
+	bool vblank;
+	GetVCounter(_state.HClock, vblank);
+	uint16_t h = PixelToInternalH(MclkToPixel(_state.HClock, _regs.H40), _regs.H40);
+	bool hblank = _regs.H40 ? !(h >= 0x00B && h < 0x166) : !(h >= 0x00A && h < 0x126);
 
-		case 0x04: {
-			uint8_t index = addr & 0x7E;
-			if(index >= MdConstants::VsRamSize) {
-				index = 0;
-			}
-			value = ((_vsRam[index] << 8) | _vsRam[index + 1]) | (_state.LastFifoValue & 0xF800);
-			break;
-		}
-
-		case 0x08: {
-			uint8_t index = addr & 0x7E;
-			value = ((_colorRam[index] << 8) | _colorRam[index + 1]) | (_state.LastFifoValue & 0xF111);
-			break;
-		}
-
-		case 0x0C: value = (_state.LastFifoValue & 0xFF00) | _videoRam[addr ^ 0x01]; break;
-
-		default: value = _state.ReadBuffer; break;
-	}
-
-	_state.ReadBuffer = value;
-	_state.ReadBufferValid = true;
-	_state.AddressReg = (_state.AddressReg + _state.AddressIncrement) & 0x1FFFF;
-}
-
-void MdVdp::WriteVramByte(uint16_t addr, uint8_t value)
-{
-	_videoRam[addr] = value;
-
-	//The VDP keeps an internal copy of the first 4 bytes of each sprite table entry (Y, size and link)
-	uint16_t offset = addr - _state.SpriteTableAddress;
-	if(offset < 80 * 8 && (offset & 0x04) == 0) {
-		_spriteCache[(offset >> 3) * 4 + (offset & 0x03)] = value;
-	}
-}
-
-void MdVdp::WriteCram(uint16_t addr, uint16_t value)
-{
-	uint8_t index = addr & 0x7E;
-	bool drawCramDot = _renderLine >= 0 && _state.DisplayEnabled;
-	uint16_t x = 0;
-	if(_renderLine >= 0) {
-		x = GetCurrentRenderX();
-		CompositeTo(x);
-	}
-
-	_colorRam[index] = (value >> 8) & 0x0E;
-	_colorRam[index + 1] = value & 0xEE;
-
-	if(drawCramDot && x < _renderWidth && x == _compositedX) {
-		//CRAM dot: the color being written is output instead of the current pixel
-		_renderBuffer[_renderRow * MdConstants::MaxScreenWidth + x] = ((value >> 3) & 0x1C0) | ((value >> 2) & 0x38) | ((value >> 1) & 0x07);
-		_compositedX = x + 1;
-	}
-}
-
-void MdVdp::WriteVsram(uint16_t addr, uint16_t value)
-{
-	uint8_t index = addr & 0x7E;
-	if(index < MdConstants::VsRamSize) {
-		_vsRam[index] = (value >> 8) & 0x07;
-		_vsRam[index + 1] = (uint8_t)value;
-	}
+	uint16_t status = 0;
+	status |= _fifoCount == 0 ? 0x200 : 0;
+	status |= _fifoCount == 4 ? 0x100 : 0;
+	status |= _vIntPending ? 0x80 : 0;
+	status |= _spriteOverflow ? 0x40 : 0;
+	status |= _spriteCollision ? 0x20 : 0;
+	status |= _interlacedOdd ? 0x10 : 0;
+	status |= (vblank || !_regs.DisplayEnabled) ? 0x08 : 0;
+	status |= hblank ? 0x04 : 0;
+	status |= _dmaActive ? 0x02 : 0;
+	status |= _isPal ? 0x01 : 0;
+	return status;
 }
 
 uint16_t MdVdp::ReadPort(uint8_t port)
 {
 	switch(port & 0x1C) {
-		case 0x00: {
-			_state.ControlPending = false;
-			uint16_t value = _state.ReadBuffer;
-			if(_state.ReadPending) {
-				_state.ReadBufferValid = false;
-			}
-			return value;
-		}
+		case 0x00:
+			return ReadDataPort();
 
 		case 0x04: {
-			uint16_t value = GetStatus();
-			_state.ControlPending = false;
-			_state.SpriteOverflow = false;
-			_state.SpriteCollision = false;
-			return value;
+			uint16_t status = GetStatus();
+			_spriteOverflow = false;
+			_spriteCollision = false;
+			_controlPending = false;
+			return status;
 		}
 
 		case 0x08:
 		case 0x0C:
-			return GetHvCounter();
+			return GetHvCounterAt(_state.HClock);
 
 		default:
 			return 0;
@@ -583,9 +606,8 @@ uint16_t MdVdp::ReadPort(uint8_t port)
 uint16_t MdVdp::PeekPort(uint8_t port)
 {
 	switch(port & 0x1C) {
-		case 0x00: return _state.ReadBuffer;
 		case 0x04: return GetStatus();
-		case 0x08: case 0x0C: return GetHvCounter();
+		case 0x08: case 0x0C: return GetHvCounterAt(_state.HClock);
 		default: return 0;
 	}
 }
@@ -599,104 +621,166 @@ void MdVdp::WritePort(uint8_t port, uint16_t value)
 	}
 }
 
+void MdVdp::WriteDebugRegister(uint16_t value)
+{
+	_debugDisplayDisabled = (value & 0x40) != 0;
+	_forcedPlane = (ForcedPlane)((value >> 7) & 0x03);
+}
+
 bool MdVdp::IsCpuWriteBlocked(uint8_t port)
 {
-	return (port & 0x1C) == 0 && _state.FifoCount >= 4;
+	return (port & 0x1C) == 0 && _fifoCount >= 4;
 }
 
 bool MdVdp::IsCpuReadBlocked(uint8_t port)
 {
-	return (port & 0x1C) == 0 && _state.ReadPending && !_state.ReadBufferValid;
+	//Data port reads wait until all pending writes have been processed
+	return (port & 0x1C) == 0 && _fifoCount > 0;
 }
 
 bool MdVdp::IsCpuBusLocked()
 {
-	return _state.DmaActive && _state.DmaMode == MdVdpDmaMode::MemoryToVram;
+	return _dmaActive && _state.DmaMode == MdVdpDmaMode::MemoryToVram;
 }
 
-void MdVdp::WriteDataPort(uint16_t value)
+MdVdp::DataLocation MdVdp::ParseLocation(uint8_t bits, bool isWrite)
 {
-	_state.ControlPending = false;
-	PushFifo(value);
-
-	if(_state.DmaFillPending) {
-		_state.DmaFillPending = false;
-		_state.DmaActive = true;
-		_state.DmaMode = MdVdpDmaMode::VramFill;
-		_state.DmaFillValue = value;
-		_state.DmaLength = (_state.Regs[19] | (_state.Regs[20] << 8));
-		if(_state.DmaLength == 0) {
-			_state.DmaLength = 0x10000;
-		}
+	switch(bits) {
+		case 0x00: return DataLocation::Vram;
+		case 0x02: return DataLocation::Vsram;
+		case 0x01: return isWrite ? DataLocation::Cram : DataLocation::Invalid;
+		case 0x04: return isWrite ? DataLocation::Invalid : DataLocation::Cram;
+		case 0x06: return isWrite ? DataLocation::Invalid : DataLocation::Vram8Bit; //Undocumented 8-bit VRAM reads
+		default: return DataLocation::Invalid;
 	}
+}
+
+uint32_t MdVdp::Convert128kAddress(uint32_t addr)
+{
+	//Formula from https://plutiedev.com/mirror/kabuto-hardware-notes#128k-abuse
+	return (((addr & 0x02) ^ 0x02) >> 1) | ((addr & 0x400) >> 9) | (addr & 0x3FC) | ((addr & 0x1F800) >> 1);
 }
 
 void MdVdp::WriteControlPort(uint16_t value)
 {
-	if(_state.ControlPending) {
-		_state.ControlPending = false;
-		_state.AddressReg = (_state.AddressReg & 0x3FFF) | ((value & 0x07) << 14);
-		_state.CodeReg = (_state.CodeReg & 0x03) | ((value >> 2) & 0x3C);
+	if(_dmaActive && _state.DmaMode == MdVdpDmaMode::MemoryToVram) {
+		//The 68000 is stopped during 68000->VDP DMA, only the Z80 can get here
+		return;
+	}
 
-		if((_state.CodeReg & 0x20) && _state.EnableDma) {
-			uint32_t length = _state.Regs[19] | (_state.Regs[20] << 8);
-			if(length == 0) {
-				length = 0x10000;
-			}
+	if(!_controlPending) {
+		//The first word is always written to the address/code registers, even for register writes
+		_controlAddress = (_controlAddress & ~0x3FFF) | (value & 0x3FFF);
+		_dataAddress = _controlAddress;
+		_isWriteMode = (value & 0x4000) != 0;
+		_locationBits = (_locationBits & ~0x01) | (value >> 15);
+		_location = ParseLocation(_locationBits, _isWriteMode);
 
-			if((_state.Regs[23] & 0x80) == 0) {
-				_state.DmaMode = MdVdpDmaMode::MemoryToVram;
-				_state.DmaSource = ((_state.Regs[23] & 0x7F) << 17) | (_state.Regs[22] << 9) | (_state.Regs[21] << 1);
-				_state.DmaLength = length;
-				_state.DmaActive = true;
-			} else if(_state.Regs[23] & 0x40) {
-				_state.DmaMode = MdVdpDmaMode::VramCopy;
-				_state.DmaSource = (_state.Regs[22] << 8) | _state.Regs[21];
-				_state.DmaLength = length;
-				_state.DmaCopyHasByte = false;
-				_state.DmaActive = true;
-			} else {
-				//Fill starts on the next data port write
-				_state.DmaFillPending = true;
-			}
-		}
-
-		if((_state.CodeReg & 0x01) == 0 && !_state.DmaActive) {
-			_state.ReadPending = true;
-			_state.ReadBufferValid = false;
+		if((value & 0xC000) == 0x8000) {
+			WriteRegister((value >> 8) & 0x1F, (uint8_t)value);
 		} else {
-			_state.ReadPending = false;
+			_controlPending = true;
 		}
-	} else if((value & 0xC000) == 0x8000) {
-		WriteRegister((value >> 8) & 0x1F, (uint8_t)value);
 	} else {
-		_state.ControlPending = _state.Mode5;
-		_state.AddressReg = (_state.AddressReg & 0x1C000) | (value & 0x3FFF);
-		_state.CodeReg = (_state.CodeReg & 0x3C) | (value >> 14);
+		_controlPending = false;
+		_controlAddress = (_controlAddress & 0x3FFF) | ((value & 0x07) << 14);
+		_dataAddress = _controlAddress;
+		_locationBits = (_locationBits & 0x01) | ((value >> 3) & 0x06);
+		_location = ParseLocation(_locationBits, _isWriteMode);
+
+		//CD5 can only be set while DMA is enabled in register #1
+		if(_regs.DmaEnabled) {
+			_dmaActive = (value & 0x80) != 0;
+		}
+
+		if(_dmaActive) {
+			_fillDataReady = false;
+			_copyOddSlot = false;
+			if(_state.DmaMode == MdVdpDmaMode::MemoryToVram) {
+				_dmaLatency = _location == DataLocation::Vsram ? 5 : 8;
+			}
+		}
 	}
 }
 
 void MdVdp::WriteRegister(uint8_t reg, uint8_t value)
 {
-	if(reg >= 24 || (!_state.Mode5 && reg > 10)) {
+	if(!_regs.Mode5 && reg > 10) {
+		//Registers above #10 can't be written in mode 4
+		return;
+	}
+	if(reg >= 24) {
 		return;
 	}
 
-	if(_renderLine >= 0) {
-		CompositeTo(GetCurrentRenderX());
+	bool prevDisplayEnabled = _regs.DisplayEnabled;
+	bool prevH40 = _regs.H40;
+	bool prevV30 = _regs.V30;
+	Regs prevRegs = _regs;
+
+	_state.Regs[reg] = value;
+	DecodeRegs(_state.Regs, _regs);
+	if(_displayEnablePending) {
+		_regs.DisplayEnabled = false;
 	}
 
-	bool latchEnabled = _state.HvCounterLatchEnabled;
-	_state.Regs[reg] = value;
-	UpdateDecodedRegisters();
+	switch(reg) {
+		case 19: _dmaLength = (_dmaLength & 0xFF00) | value; break;
+		case 20: _dmaLength = (_dmaLength & 0x00FF) | (value << 8); break;
+		case 21: _dmaSource = (_dmaSource & 0xFFFFFE00) | (value << 1); break;
+		case 22: _dmaSource = (_dmaSource & 0xFFFE01FF) | (value << 9); break;
+		case 23:
+			_dmaSource = (_dmaSource & 0x1FFFF) | ((value & 0x3F) << 17);
+			switch(value & 0xC0) {
+				case 0x00: _state.DmaMode = MdVdpDmaMode::MemoryToVram; break;
+				case 0x40:
+					//When DMD1 is 0, DMD0 is used as bit 23 of the source address
+					_dmaSource |= 1 << 23;
+					_state.DmaMode = MdVdpDmaMode::MemoryToVram;
+					break;
+				case 0x80: _state.DmaMode = MdVdpDmaMode::VramFill; break;
+				case 0xC0: _state.DmaMode = MdVdpDmaMode::VramCopy; break;
+			}
+			break;
+	}
 
-	if(reg == 0) {
-		if(!_state.HvCounterLatchEnabled) {
-			_state.HvLatched = false;
-		} else if(!latchEnabled) {
-			_state.HvLatch = GetHvCounter();
-			_state.HvLatched = true;
+	if(reg == 1) {
+		if(!prevDisplayEnabled && _regs.DisplayEnabled && _fifoCount > 0) {
+			//Display is only re-enabled once the FIFO is empty (games re-enabling the display right after a DMA depend on this)
+			_regs.DisplayEnabled = false;
+			_displayEnablePending = true;
+		} else {
+			_displayEnablePending = false;
 		}
+	}
+
+	if(_regs.HvCounterStopped && !_hvLatched) {
+		_hvLatch = GetHvCounterAt(_state.HClock);
+		_hvLatched = true;
+	} else if(!_regs.HvCounterStopped) {
+		_hvLatched = false;
+	}
+
+	switch(reg) {
+		case 1: RelatchRegister(reg, prevRegs.DisplayEnabled != _regs.DisplayEnabled); break;
+		case 2: RelatchRegister(reg, prevRegs.PlaneATable != _regs.PlaneATable); break;
+		case 3: RelatchRegister(reg, prevRegs.WindowTable != _regs.WindowTable); break;
+		case 4: RelatchRegister(reg, prevRegs.PlaneBTable != _regs.PlaneBTable); break;
+		case 7: RelatchRegister(reg, prevRegs.BackdropColor != _regs.BackdropColor); break;
+	}
+
+	if(reg == 1) {
+		HandleDisplayEnableWrite(_regs.DisplayEnabled);
+
+		//Switching from V30 to V28 between lines 224 and 239 makes the VDP "forget" the vertical border:
+		//rendering and HINTs continue in the border area until the end of the frame
+		if(prevV30 && !_regs.V30 && _state.Scanline >= 224 && _state.Scanline < 240) {
+			_vBorderForgotten = true;
+		}
+	}
+
+	if(prevH40 != _regs.H40) {
+		HandleHResolutionChange();
 	}
 
 	if(reg == 0 || reg == 1) {
@@ -704,57 +788,427 @@ void MdVdp::WriteRegister(uint8_t reg, uint8_t value)
 	}
 }
 
-void MdVdp::UpdateDecodedRegisters()
+void MdVdp::RelatchRegister(uint8_t reg, bool changed)
 {
-	uint8_t* r = _state.Regs;
+	//Nametable addresses, the display enable bit and the backdrop color are not latched - they take effect immediately
+	switch(reg) {
+		case 1: _latched.DisplayEnabled = _regs.DisplayEnabled; break;
+		case 2: _latched.PlaneATable = _regs.PlaneATable; break;
+		case 3: _latched.WindowTable = _regs.WindowTable; break;
+		case 4: _latched.PlaneBTable = _regs.PlaneBTable; break;
+		case 7: _latched.BackdropColor = _regs.BackdropColor; break;
+	}
 
-	_state.LeftColumnBlank = r[0] & 0x20;
-	_state.MaskLeftColumn = r[0] & 0x20;
-	_state.EnableHorizontalIrq = r[0] & 0x10;
-	_state.HvCounterLatchEnabled = r[0] & 0x02;
-	_state.ExtVideoEnabled = r[0] & 0x01;
+	if(!changed) {
+		return;
+	}
 
-	_state.DisplayEnabled = r[1] & 0x40;
-	_state.EnableVerticalIrq = r[1] & 0x20;
-	_state.EnableDma = r[1] & 0x10;
-	_state.V30Mode = r[1] & 0x08;
-	_state.Mode5 = r[1] & 0x04;
+	uint16_t renderingStart = GetActiveStartH() - 16;
+	if(_pixel < renderingStart) {
+		return;
+	}
 
-	_state.H40Mode = r[12] & 0x01;
-	_state.ShadowHighlightEnabled = r[12] & 0x08;
-	_state.InterlaceMode = (r[12] >> 1) & 0x03;
+	uint16_t fromPixel = _pixel;
+	if(reg >= 2 && reg <= 4) {
+		//Nametable fetches for plane A happen at pixel 0 of each 16-pixel column, and at pixel 8 for plane B
+		bool planeA = reg != 4;
+		uint16_t relative = _pixel - renderingStart;
+		uint16_t columnStart = relative / 16 * 16;
+		uint16_t firstAffected = (planeA || (relative % 16) >= 8) ? columnStart + 16 : columnStart;
+		uint16_t hscroll = _latchedHScroll[planeA ? 0 : 1];
+		fromPixel = renderingStart + firstAffected + (hscroll % 16) + 16;
+	}
 
-	_state.PlaneATableAddress = (r[2] & 0x38) << 10;
-	_state.WindowTableAddress = (r[3] & (_state.H40Mode ? 0x3C : 0x3E)) << 10;
-	_state.PlaneBTableAddress = (r[4] & 0x07) << 13;
-	_state.SpriteTableAddress = (r[5] & (_state.H40Mode ? 0x7E : 0x7F)) << 9;
-	_state.BackgroundColorIndex = r[7] & 0x3F;
-	_state.HScrollTableAddress = (r[13] & 0x3F) << 10;
-	_state.AddressIncrement = r[15];
+	RenderPartialLine(fromPixel);
+}
 
-	_state.EnableExternalIrq = r[11] & 0x08;
-	_state.VScrollColumnMode = r[11] & 0x04;
-	_state.HScrollMode = r[11] & 0x03;
+void MdVdp::RenderPartialLine(uint16_t fromPixel)
+{
+	if(_state.Scanline >= GetActiveScanlines(_latched)) {
+		return;
+	}
 
-	constexpr uint8_t planeSizes[4] = { 32, 64, 32, 128 };
-	_state.PlaneWidth = planeSizes[r[16] & 0x03];
-	_state.PlaneHeight = planeSizes[(r[16] >> 4) & 0x03];
+	uint16_t activeStart = GetActiveStartH();
+	uint16_t activeEnd = GetActiveEndH();
+	if(fromPixel >= activeStart && fromPixel < activeEnd) {
+		RenderScanline(_state.Scanline, fromPixel - activeStart);
+	}
+}
 
-	_state.WindowHPos = r[17] & 0x1F;
-	_state.WindowRight = r[17] & 0x80;
-	_state.WindowVPos = r[18] & 0x1F;
-	_state.WindowDown = r[18] & 0x80;
+void MdVdp::HandleDisplayEnableWrite(bool enabled)
+{
+	uint16_t renderingStart = GetActiveStartH() - 16;
+	uint16_t hblankStart = GetActiveEndH() - 16;
+	if(_pixel >= renderingStart && _pixel < hblankStart) {
+		return;
+	}
+
+	if(!_spriteDisplayEnabled) {
+		IncrementPixelsDisabled(_pixel);
+	}
+
+	_spriteDisplayEnabled = enabled;
+	_displayEnabledPixel = _pixel;
+}
+
+void MdVdp::IncrementPixelsDisabled(uint16_t pixel)
+{
+	if(pixel >= _displayEnabledPixel) {
+		_pixelsDisabledDuringHblank += pixel - _displayEnabledPixel;
+	} else {
+		_pixelsDisabledDuringHblank += pixel + GetPixelsPerLine() - _displayEnabledPixel;
+	}
+}
+
+MdVdp::FifoEntry MdVdp::CreateFifoEntry(uint16_t value)
+{
+	FifoEntry entry = {};
+	entry.Value = value;
+	entry.Location = _location;
+	entry.IsWrite = _isWriteMode;
+	entry.Latency = MdVdp::InitialFifoLatency;
+
+	if(_regs.Vram128k && (_location == DataLocation::Vram || _location == DataLocation::Invalid)) {
+		//128KB mode converts the address when the entry is pushed (Overdrive 2 depends on this)
+		entry.Address = Convert128kAddress(_dataAddress);
+		entry.ByteWrite = true;
+	} else {
+		entry.Address = _dataAddress;
+		entry.ByteWrite = false;
+	}
+	return entry;
+}
+
+void MdVdp::WriteDataPort(uint16_t value)
+{
+	if(_dmaActive && _state.DmaMode == MdVdpDmaMode::MemoryToVram) {
+		return;
+	}
+
+	_controlPending = false;
+
+	FifoEntry entry = CreateFifoEntry(value);
+	_dataAddress = (_dataAddress + _regs.AutoIncrement) & 0x1FFFF;
+
+	if(_fifoCount >= 4) {
+		//Can only happen with Z80 writes (the 68000 waits for a free entry)
+		return;
+	}
+	PushFifo(entry);
+}
+
+void MdVdp::PushFifo(FifoEntry entry)
+{
+	if(entry.IsWrite && entry.Location == DataLocation::Vram) {
+		//The sprite cache is updated when entries are pushed into the FIFO
+		//In 128KB mode, the LSB is written to the target address, but the MSB can still update the paired byte in the cache
+		uint8_t first = entry.ByteWrite ? (uint8_t)entry.Value : (uint8_t)(entry.Value >> 8);
+		uint8_t second = entry.ByteWrite ? (uint8_t)(entry.Value >> 8) : (uint8_t)entry.Value;
+		UpdateSpriteCache(entry.Address, first);
+		UpdateSpriteCache(entry.Address ^ 1, second);
+	}
+
+	_fifo[_fifoPushIndex] = entry;
+	_fifoPushIndex = (_fifoPushIndex + 1) & 0x03;
+	_fifoCount++;
+}
+
+void MdVdp::PopFifo()
+{
+	FifoEntry& entry = GetFifoFront();
+	bool renderPartial = false;
+
+	if(entry.IsWrite) {
+		switch(entry.Location) {
+			case DataLocation::Vram: {
+				uint32_t addr = entry.Address & 0xFFFF;
+				if(entry.ByteWrite) {
+					_videoRam[addr] = (uint8_t)entry.Value;
+				} else {
+					_videoRam[addr] = (uint8_t)(entry.Value >> 8);
+					_videoRam[addr ^ 1] = (uint8_t)entry.Value;
+				}
+				break;
+			}
+
+			case DataLocation::Cram:
+				WriteCram((entry.Address & 0x7F) >> 1, entry.Value);
+				renderPartial = true;
+				break;
+
+			case DataLocation::Vsram: {
+				uint8_t index = (entry.Address & 0x7F) >> 1;
+				if(index < 40) {
+					WriteVsram(index, entry.Value);
+					renderPartial = _latched.VScroll2Cell;
+				}
+				break;
+			}
+
+			default:
+				break;
+		}
+	}
+
+	//VRAM fill starts once an entry is popped from the FIFO
+	_fillData = entry.Value;
+	_fillDataReady = true;
+
+	//VRAM writes (and writes to invalid targets) take 2 slots
+	if((entry.Location == DataLocation::Vram || entry.Location == DataLocation::Invalid) && !entry.ByteWrite && !entry.SecondHalf) {
+		entry.SecondHalf = true;
+	} else {
+		_fifoPopIndex = (_fifoPopIndex + 1) & 0x03;
+		_fifoCount--;
+	}
+
+	if(_displayEnablePending && _fifoCount == 0) {
+		_displayEnablePending = false;
+		_regs.DisplayEnabled = true;
+		_latched.DisplayEnabled = true;
+		HandleDisplayEnableWrite(true);
+		renderPartial = true;
+	}
+
+	if(renderPartial) {
+		RenderPartialLine(_pixel);
+	}
+}
+
+void MdVdp::HandleAccessSlot()
+{
+	if(_fifoCount > 0) {
+		if(GetFifoFront().Latency == 0) {
+			PopFifo();
+		}
+	} else if(_dmaActive) {
+		switch(_state.DmaMode) {
+			case MdVdpDmaMode::VramFill: ProgressVramFillDma(); break;
+			case MdVdpDmaMode::VramCopy: ProgressVramCopyDma(); break;
+			default: break;
+		}
+	}
+}
+
+void MdVdp::ProgressMemoryToVramDma(uint16_t slot, const bool* blankRefreshSlots)
+{
+	if(!_dmaActive || _state.DmaMode != MdVdpDmaMode::MemoryToVram) {
+		return;
+	}
+
+	if(_dmaLatency > 0) {
+		_dmaLatency--;
+	}
+
+	if(_fifoCount >= 4) {
+		return;
+	}
+
+	//A read slot is lost after every refresh slot
+	if(slot != 0 && blankRefreshSlots[slot - 1]) {
+		return;
+	}
+
+	uint16_t value = _memoryManager->ReadDma(_dmaSource & 0xFFFFFF);
+	IncrementDmaSource();
+
+	FifoEntry entry = CreateFifoEntry(value);
+	entry.Latency = std::max(_dmaLatency, MdVdp::InitialFifoLatency);
+	PushFifo(entry);
+	_dataAddress = (_dataAddress + _regs.AutoIncrement) & 0x1FFFF;
+
+	DecrementDmaLength();
+}
+
+void MdVdp::ProgressVramFillDma()
+{
+	if(!_fillDataReady) {
+		return;
+	}
+
+	//VRAM fill increments the source address too, even though it is not used
+	IncrementDmaSource();
+
+	switch(_location) {
+		case DataLocation::Vram:
+		case DataLocation::Vram8Bit: {
+			uint8_t value = (uint8_t)(_fillData >> 8);
+			uint32_t addr = (_dataAddress ^ 1) & 0xFFFF;
+			_videoRam[addr] = value;
+			UpdateSpriteCache(addr, value);
+			break;
+		}
+
+		case DataLocation::Cram:
+			//CRAM/VSRAM fills use the value from the next FIFO slot instead of the fill data
+			WriteCram((_dataAddress & 0x7F) >> 1, GetNextSlotWord());
+			break;
+
+		case DataLocation::Vsram: {
+			uint8_t index = (_dataAddress & 0x7F) >> 1;
+			if(index < 40) {
+				WriteVsram(index, GetNextSlotWord());
+			}
+			break;
+		}
+
+		default:
+			break;
+	}
+
+	_dataAddress = (_dataAddress + _regs.AutoIncrement) & 0x1FFFF;
+	DecrementDmaLength();
+}
+
+void MdVdp::ProgressVramCopyDma()
+{
+	//Each byte takes 2 slots (read + write)
+	_copyOddSlot = !_copyOddSlot;
+	if(_copyOddSlot) {
+		return;
+	}
+
+	uint32_t src = ((_dmaSource >> 1) ^ 1) & 0xFFFF;
+	IncrementDmaSource();
+
+	uint32_t dst = (_dataAddress ^ 1) & 0xFFFF;
+	_dataAddress = (_dataAddress + _regs.AutoIncrement) & 0x1FFFF;
+
+	uint8_t value = _videoRam[src];
+	_videoRam[dst] = value;
+	UpdateSpriteCache(dst, value);
+
+	DecrementDmaLength();
+}
+
+void MdVdp::IncrementDmaSource()
+{
+	//The DMA source address wraps within a 128KB block
+	_dmaSource = (_dmaSource & ~0x1FFFF) | ((_dmaSource + 2) & 0x1FFFF);
+}
+
+void MdVdp::DecrementDmaLength()
+{
+	//A length of 0 behaves like 65536
+	_dmaLength--;
+
+	_state.Regs[19] = (uint8_t)_dmaLength;
+	_state.Regs[20] = (uint8_t)(_dmaLength >> 8);
+	_state.Regs[21] = (uint8_t)(_dmaSource >> 1);
+	_state.Regs[22] = (uint8_t)(_dmaSource >> 9);
+	_state.Regs[23] = (_state.Regs[23] & 0xC0) | ((_dmaSource >> 17) & 0x3F);
+
+	if(_dmaLength == 0) {
+		_dmaActive = false;
+	}
+}
+
+void MdVdp::UpdateSpriteCache(uint32_t addr, uint8_t value)
+{
+	if(addr & 0x04) {
+		//Only the first 4 bytes of each entry are cached
+		return;
+	}
+
+	uint32_t tableStart = _regs.SpriteTable;
+	uint32_t tableEnd = tableStart + 8 * (_regs.H40 ? 80 : 64);
+	if(addr < tableStart || addr >= tableEnd) {
+		return;
+	}
+
+	uint32_t index = (addr - tableStart) / 8;
+	switch(addr & 0x03) {
+		case 0: _spriteCache[index * 4] = value & 0x03; break;
+		case 1: _spriteCache[index * 4 + 1] = value; break;
+		case 2: _spriteCache[index * 4 + 2] = value; break;
+		case 3: _spriteCache[index * 4 + 3] = value & 0x7F; break;
+	}
+}
+
+void MdVdp::WriteCram(uint8_t index, uint16_t value)
+{
+	_colorRam[index * 2] = (value >> 8) & 0x0E;
+	_colorRam[index * 2 + 1] = value & 0xEE;
+	_palette[index] = ((value >> 3) & 0x1C0) | ((value >> 2) & 0x38) | ((value >> 1) & 0x07);
+
+	//CRAM dots: the color being written is output at the current position while the display is active
+	if(!_inVblank && _regs.DisplayEnabled && _state.Scanline < GetActiveScanlines(_latched) && _cramDotCount < 32) {
+		uint16_t activeStart = GetActiveStartH();
+		if(_pixel >= activeStart && _pixel < GetActiveEndH()) {
+			_cramDots[_cramDotCount++] = { (uint16_t)(_pixel - activeStart), _palette[index] };
+		}
+	}
+}
+
+void MdVdp::WriteVsram(uint8_t index, uint16_t value)
+{
+	_vsRam[index * 2] = (value >> 8) & 0x07;
+	_vsRam[index * 2 + 1] = (uint8_t)value;
+}
+
+uint16_t MdVdp::ReadDataPort()
+{
+	_controlPending = false;
+
+	if(_isWriteMode) {
+		return 0xFFFF;
+	}
+
+	uint16_t value;
+	switch(_location) {
+		case DataLocation::Vram:
+			if(_regs.Vram128k) {
+				uint8_t b = _videoRam[Convert128kAddress(_dataAddress) & 0xFFFF];
+				value = (b << 8) | b;
+			} else {
+				uint32_t addr = _dataAddress & 0xFFFE;
+				value = (_videoRam[addr] << 8) | _videoRam[addr + 1];
+			}
+			break;
+
+		case DataLocation::Vram8Bit:
+			value = (GetNextSlotWord() & 0xFF00) | _videoRam[(_dataAddress & 0xFFFF) ^ 1];
+			break;
+
+		case DataLocation::Cram: {
+			uint8_t index = (_dataAddress & 0x7F) & ~0x01;
+			value = (_colorRam[index] << 8) | _colorRam[index + 1];
+			break;
+		}
+
+		case DataLocation::Vsram: {
+			uint8_t index = (_dataAddress & 0x7F) & ~0x01;
+			if(index >= MdConstants::VsRamSize) {
+				index = 0;
+			}
+			value = (_vsRam[index] << 8) | _vsRam[index + 1];
+			break;
+		}
+
+		default:
+			value = 0xFFFF;
+			break;
+	}
+
+	_dataAddress = (_dataAddress + _regs.AutoIncrement) & 0x1FFFF;
+
+	//CRAM is 9-bit and VSRAM is 11-bit - the other bits come from the next FIFO slot
+	switch(_location) {
+		case DataLocation::Cram: return (value & 0x0EEE) | (GetNextSlotWord() & ~0x0EEE);
+		case DataLocation::Vsram: return (value & 0x07FF) | (GetNextSlotWord() & ~0x07FF);
+		default: return value;
+	}
 }
 
 void MdVdp::UpdateIrqState()
 {
-	if(_state.VerticalIrqPending && _state.EnableVerticalIrq) {
+	if(_vIntPending && _regs.VIntEnabled) {
 		_cpu->SetIrqSource(MdIrqSource::Vertical);
 	} else {
 		_cpu->ClearIrqSource(MdIrqSource::Vertical);
 	}
 
-	if(_state.HorizontalIrqPending && _state.EnableHorizontalIrq) {
+	if(_hIntPending && _regs.HIntEnabled) {
 		_cpu->SetIrqSource(MdIrqSource::Horizontal);
 	} else {
 		_cpu->ClearIrqSource(MdIrqSource::Horizontal);
@@ -764,117 +1218,40 @@ void MdVdp::UpdateIrqState()
 void MdVdp::AcknowledgeInterrupt(uint8_t level)
 {
 	if(level == 6) {
-		_state.VerticalIrqPending = false;
+		_vIntPending = false;
 	} else if(level == 4) {
-		_state.HorizontalIrqPending = false;
+		_hIntPending = false;
 	}
 	UpdateIrqState();
 }
 
 void MdVdp::LatchHvCounter()
 {
-	if(_state.HvCounterLatchEnabled) {
-		_state.HvLatch = GetHvCounter();
-		_state.HvLatched = true;
+	if(_regs.HvCounterStopped) {
+		_hvLatched = false;
+		_hvLatch = GetHvCounterAt(_state.HClock);
+		_hvLatched = true;
 	}
-}
-
-uint16_t MdVdp::GetStatus()
-{
-	uint16_t status = 0;
-	if(_state.FifoCount == 0) {
-		status |= 0x200;
-	} else if(_state.FifoCount >= 4) {
-		status |= 0x100;
-	}
-
-	if(_state.VerticalIrqPending) {
-		status |= 0x80;
-	}
-	if(_state.SpriteOverflow) {
-		status |= 0x40;
-	}
-	if(_state.SpriteCollision) {
-		status |= 0x20;
-	}
-	if(_state.OddFrame) {
-		status |= 0x10;
-	}
-	if(_state.InVerticalBlank || !_state.DisplayEnabled) {
-		status |= 0x08;
-	}
-
-	const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
-	uint16_t hc = GetHCounter();
-	_state.InHorizontalBlank = hc >= timing.HBlankStart || hc < timing.HBlankEnd;
-	if(_state.InHorizontalBlank) {
-		status |= 0x04;
-	}
-
-	if(_state.DmaActive) {
-		status |= 0x02;
-	}
-	if(_region == ConsoleRegion::Pal) {
-		status |= 0x01;
-	}
-	return status;
-}
-
-uint16_t MdVdp::GetHCounter()
-{
-	const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
-	uint16_t q = timing.PixelAtClock[std::min<uint16_t>(_state.HClock, MdConstants::ClocksPerScanline - 1)];
-	uint16_t p = (q + timing.VCounterChangePixel) % timing.PixelCount;
-	if(_lineH40) {
-		return p <= 0x16C ? p : (p - 365 + 0x1C9);
-	} else {
-		return p <= 0x127 ? p : (p - 296 + 0x1D2);
-	}
-}
-
-uint16_t MdVdp::GetVCounter()
-{
-	uint16_t line = _state.Scanline;
-	if(line > _vCounterJumpFrom) {
-		line = line - _vCounterJumpFrom - 1 + _vCounterJumpTo;
-	}
-	return line & 0x1FF;
-}
-
-uint16_t MdVdp::GetHvCounter()
-{
-	if(_state.HvCounterLatchEnabled && _state.HvLatched) {
-		return _state.HvLatch;
-	}
-
-	uint16_t hc = GetHCounter();
-	uint16_t vc = GetVCounter();
-	if(_frameInterlaceMode == 3) {
-		vc = (vc << 1) | ((vc >> 8) & 0x01);
-	} else if(_frameInterlaceMode == 1) {
-		vc = (vc & 0x1FE) | ((vc >> 8) & 0x01);
-	}
-
-	_state.HCounter = hc;
-	return ((vc & 0xFF) << 8) | ((hc >> 1) & 0xFF);
-}
-
-uint16_t MdVdp::GetScanlineCount()
-{
-	return _totalLines;
 }
 
 uint16_t MdVdp::GetActiveDisplayStartClock()
 {
-	//Position (in MCLK, relative to the start of the line) of the first active display pixel
-	const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
-	uint16_t pixel = (timing.ActiveStart + timing.PixelCount - timing.VCounterChangePixel) % timing.PixelCount;
-	for(uint16_t i = 0; i < MdConstants::ClocksPerScanline; i++) {
-		if(timing.PixelAtClock[i] == pixel) {
-			return i;
-		}
+	return GetActiveStartH() * (_regs.H40 ? 8 : 10);
+}
+
+uint32_t MdVdp::GetCurrentScreenWidth()
+{
+	uint32_t active = _frameH40 ? 320 : 256;
+	if(_showHorizontalBorder) {
+		return GetLeftBorder(_frameH40) + active + MdVdp::RightBorder;
 	}
-	return 0;
+	return active;
+}
+
+uint32_t MdVdp::GetCurrentScreenHeight()
+{
+	uint32_t height = _showVerticalBorder ? GetRenderedLinesPerFrame() : GetActiveScanlines(_regs);
+	return _interlacedFrame ? height * 2 : height;
 }
 
 uint32_t MdVdp::GetScreenWidth()
@@ -887,447 +1264,879 @@ uint32_t MdVdp::GetScreenHeight()
 	return _frameHeight;
 }
 
-void MdVdp::PrepareLine()
+MdVdp::RasterLine MdVdp::GetRasterLine(uint16_t scanline)
 {
-	if(_renderLine >= 0) {
-		FinishLine();
-	}
+	uint16_t active = GetActiveScanlines(_latched);
+	uint16_t scanlinesInFrame = GetScanlinesInFrame();
+	uint16_t topBorder = GetTopBorder(_latched.V30);
 
-	uint16_t line = _state.Scanline;
-	bool im2 = IsInterlaceMode2();
-	_renderLine = line;
-	_renderWidth = _lineH40 ? 320 : 256;
-	_renderRow = im2 ? (line * 2 + (_state.OddFrame ? 1 : 0)) : line;
-	_compositedX = 0;
-
-	memset(_lineA, 0, sizeof(_lineA));
-	memset(_lineB, 0, sizeof(_lineB));
-	memset(_lineS, 0, sizeof(_lineS));
-
-	if(!_state.Mode5 || !_state.DisplayEnabled) {
-		_prevLineDotOverflow = false;
-		return;
-	}
-
-	uint16_t logicalLine = im2 ? _renderRow : line;
-
-	uint16_t hscrollAddr = _state.HScrollTableAddress;
-	switch(_state.HScrollMode) {
-		default:
-		case 0: break;
-		case 1: hscrollAddr += (line & 0x07) * 4; break;
-		case 2: hscrollAddr += (line & ~0x07) * 4; break;
-		case 3: hscrollAddr += line * 4; break;
-	}
-	uint16_t hscrollA = ((_videoRam[hscrollAddr & 0xFFFF] << 8) | _videoRam[(hscrollAddr + 1) & 0xFFFF]) & 0x3FF;
-	uint16_t hscrollB = ((_videoRam[(hscrollAddr + 2) & 0xFFFF] << 8) | _videoRam[(hscrollAddr + 3) & 0xFFFF]) & 0x3FF;
-
-	int16_t windowStart = 0;
-	int16_t windowEnd = 0;
-	uint16_t windowY = _state.WindowVPos * 8;
-	bool windowLine = _state.WindowDown ? (line >= windowY) : (line < windowY);
-	if(windowLine) {
-		windowEnd = _renderWidth;
+	if(scanline < active) {
+		return { scanline, false };
+	} else if(scanline >= scanlinesInFrame - topBorder) {
+		//Top border - the last line of the border is raster line 511
+		return { (uint16_t)(512 - (scanlinesInFrame - scanline)), true };
 	} else {
-		int16_t windowX = std::min<int16_t>(_state.WindowHPos * 16, _renderWidth);
-		if(_state.WindowRight) {
-			windowStart = windowX;
-			windowEnd = _renderWidth;
-		} else {
-			windowEnd = windowX;
-		}
-	}
-
-	if(!_disablePlaneB) {
-		RenderPlane(_lineB, false, hscrollB, logicalLine, 0, 0);
-	}
-	if(!_disablePlaneA) {
-		RenderPlane(_lineA, true, hscrollA, logicalLine, windowStart, windowEnd);
-	}
-	if(!_disableWindow && windowEnd > windowStart) {
-		RenderWindow(_lineA, logicalLine, windowStart, windowEnd);
-	}
-
-	RenderSprites(logicalLine);
-}
-
-void MdVdp::RenderPlane(uint8_t* out, bool planeA, uint16_t hscroll, uint16_t logicalLine, int16_t windowStart, int16_t windowEnd)
-{
-	//Invalid plane size combinations behave like this on hardware (matches Genesis Plus GX's tables)
-	constexpr uint8_t shiftTable[4] = { 6, 7, 0, 8 };
-	constexpr uint16_t colMaskTable[4] = { 0x1F, 0x3F, 0x1F, 0x7F };
-	constexpr uint16_t rowMaskTable[4] = { 0xFF, 0x1FF, 0x2FF, 0x3FF };
-
-	bool im2 = IsInterlaceMode2();
-	uint8_t sizeReg = _state.Regs[16];
-	uint8_t rowShift = shiftTable[sizeReg & 0x03];
-	uint16_t colMask = colMaskTable[sizeReg & 0x03];
-	uint16_t rowMask = rowMaskTable[(sizeReg >> 4) & 0x03];
-	uint8_t tileShift = 3;
-	uint8_t tileHeight = 8;
-	uint16_t vscrollMask = 0x3FF;
-	if(im2) {
-		rowMask = (rowMask << 1) | 0x01;
-		tileShift = 4;
-		tileHeight = 16;
-		vscrollMask = 0x7FF;
-	}
-
-	uint16_t base = planeA ? _state.PlaneATableAddress : _state.PlaneBTableAddress;
-	uint8_t planeIndex = planeA ? 0 : 1;
-	uint16_t fineScroll = hscroll & 0x0F;
-
-	auto readVsram = [this](uint8_t index) -> uint16_t {
-		return (_vsRam[index * 2] << 8) | _vsRam[index * 2 + 1];
-	};
-
-	uint16_t fullVscroll = readVsram(planeIndex);
-	uint16_t leftColumnVscroll = fullVscroll;
-	if(_state.VScrollColumnMode) {
-		//The left-most, partially shown column uses VSRAM entries 19 (ANDed) in H40 mode, and 0 in H32 mode
-		leftColumnVscroll = _lineH40 ? (readVsram(38) & readVsram(39)) : 0;
-	}
-
-	//Window bug: when the window is on the left and plane A's fine scroll isn't 0, the partially shown column after the window fetches the wrong column
-	bool windowBug = planeA && windowStart == 0 && windowEnd > 0 && windowEnd < _renderWidth && fineScroll != 0;
-
-	uint32_t cachedKey = 0xFFFFFFFF;
-	uint8_t tileData[4] = {};
-	uint8_t attributes = 0;
-	bool hflip = false;
-
-	for(int x = 0; x < _renderWidth; x++) {
-		if(x >= windowStart && x < windowEnd) {
-			continue;
-		}
-
-		int fetchX = x;
-		int column = ((x - (int)fineScroll + 16) >> 4) - 1;
-		if(windowBug && x >= windowEnd && x < windowEnd + (int)fineScroll) {
-			fetchX += 16;
-			column++;
-		}
-
-		uint16_t vscroll;
-		if(column < 0) {
-			vscroll = leftColumnVscroll;
-		} else if(_state.VScrollColumnMode) {
-			vscroll = readVsram((uint8_t)(column * 2 + planeIndex));
-		} else {
-			vscroll = fullVscroll;
-		}
-
-		uint16_t py = (logicalLine + (vscroll & vscrollMask)) & rowMask;
-		uint16_t px = (uint16_t)(fetchX - hscroll) & 0x3FF;
-		uint16_t cell = (px >> 3) & colMask;
-		uint16_t ntAddr = (base + ((py >> tileShift) << rowShift) + cell * 2) & 0xFFFF;
-
-		uint32_t key = (ntAddr << 16) | (py & (tileHeight - 1));
-		if(key != cachedKey) {
-			cachedKey = key;
-			uint16_t entry = (_videoRam[ntAddr & 0xFFFE] << 8) | _videoRam[(ntAddr & 0xFFFE) + 1];
-			uint16_t row = py & (tileHeight - 1);
-			if(entry & 0x1000) {
-				row = tileHeight - 1 - row;
-			}
-			uint16_t tileIndex = entry & 0x7FF;
-			uint16_t patternAddr = im2 ? (((tileIndex & 0x3FF) << 6) + row * 4) : ((tileIndex << 5) + row * 4);
-			for(int i = 0; i < 4; i++) {
-				tileData[i] = _videoRam[(patternAddr + i) & 0xFFFF];
-			}
-			hflip = entry & 0x0800;
-			attributes = ((entry >> 8) & 0x80) | ((entry >> 9) & 0x30);
-		}
-
-		uint8_t col = px & 0x07;
-		if(hflip) {
-			col = 7 - col;
-		}
-		uint8_t data = tileData[col >> 1];
-		uint8_t color = (col & 0x01) ? (data & 0x0F) : (data >> 4);
-		out[x] = attributes | color;
+		//Bottom border and vertical blank
+		return { scanline, true };
 	}
 }
 
-void MdVdp::RenderWindow(uint8_t* out, uint16_t logicalLine, int16_t windowStart, int16_t windowEnd)
+int32_t MdVdp::GetFrameBufferRow(RasterLine line)
 {
-	bool im2 = IsInterlaceMode2();
-	uint8_t tileShift = im2 ? 4 : 3;
-	uint8_t tileHeight = im2 ? 16 : 8;
-	uint16_t widthCells = _lineH40 ? 64 : 32;
-	uint16_t rowAddr = _state.WindowTableAddress + (logicalLine >> tileShift) * widthCells * 2;
-
-	for(int x = windowStart; x < windowEnd; x += 8) {
-		uint16_t ntAddr = (rowAddr + (x >> 3) * 2) & 0xFFFE;
-		uint16_t entry = (_videoRam[ntAddr] << 8) | _videoRam[ntAddr + 1];
-		uint16_t row = logicalLine & (tileHeight - 1);
-		if(entry & 0x1000) {
-			row = tileHeight - 1 - row;
+	if(_showVerticalBorder) {
+		if(line.Line >= 512 - _topBorder) {
+			return line.Line - (512 - _topBorder);
+		} else if(line.Line < GetRenderedLinesPerFrame() - _topBorder) {
+			return line.Line + _topBorder;
 		}
-		uint16_t tileIndex = entry & 0x7FF;
-		uint16_t patternAddr = im2 ? (((tileIndex & 0x3FF) << 6) + row * 4) : ((tileIndex << 5) + row * 4);
-		bool hflip = entry & 0x0800;
-		uint8_t attributes = ((entry >> 8) & 0x80) | ((entry >> 9) & 0x30);
-
-		for(int i = 0; i < 8 && x + i < windowEnd; i++) {
-			uint8_t col = hflip ? (7 - i) : i;
-			uint8_t data = _videoRam[(patternAddr + (col >> 1)) & 0xFFFF];
-			uint8_t color = (col & 0x01) ? (data & 0x0F) : (data >> 4);
-			out[x + i] = attributes | color;
-		}
+		return -1;
 	}
+	return line.InVBorder ? -1 : line.Line;
 }
 
-void MdVdp::RenderSprites(uint16_t logicalLine)
+void MdVdp::RenderScanline(uint16_t scanline, uint16_t startPixel)
 {
-	bool im2 = IsInterlaceMode2();
-	uint8_t maxSprites = _lineH40 ? 80 : 64;
-	uint8_t maxSpritesPerLine = _lineH40 ? 20 : 16;
-	uint8_t maxCellsPerLine = _lineH40 ? 40 : 32;
-	uint8_t tileShift = im2 ? 4 : 3;
-	uint8_t tileHeight = im2 ? 16 : 8;
-	int yOffset = im2 ? 256 : 128;
-	uint16_t yMask = im2 ? 0x3FF : 0x1FF;
-	int line = logicalLine;
-
-	//Phase 1: find the sprites that are on this line, using the internal sprite cache (Y/size/link)
-	uint8_t found[80];
-	uint8_t foundCount = 0;
-	uint8_t index = 0;
-	for(int visited = 0; visited < maxSprites; visited++) {
-		uint8_t* cache = &_spriteCache[index * 4];
-		int top = (int)(((cache[0] << 8) | cache[1]) & yMask) - yOffset;
-		int height = ((cache[2] & 0x03) + 1) * tileHeight;
-		if(line >= top && line < top + height) {
-			if(foundCount >= maxSpritesPerLine) {
-				_state.SpriteOverflow = true;
-				if(!_removeSpriteLimit) {
-					break;
-				}
-			}
-			found[foundCount++] = index;
-		}
-
-		index = cache[3] & 0x7F;
-		if(index == 0 || index >= maxSprites) {
-			break;
-		}
-	}
-
-	//Phase 2: draw the sprites, up to the per-line pixel limit
-	int cellCount = 0;
-	bool dotOverflow = false;
-	bool masked = false;
-	bool nonZeroXFound = _prevLineDotOverflow;
-	for(int i = 0; i < foundCount; i++) {
-		uint8_t sprIndex = found[i];
-		uint8_t* cache = &_spriteCache[sprIndex * 4];
-		uint16_t entryAddr = _state.SpriteTableAddress + sprIndex * 8;
-		uint16_t pattern = (_videoRam[(entryAddr + 4) & 0xFFFF] << 8) | _videoRam[(entryAddr + 5) & 0xFFFF];
-		uint16_t xpos = ((_videoRam[(entryAddr + 6) & 0xFFFF] << 8) | _videoRam[(entryAddr + 7) & 0xFFFF]) & 0x1FF;
-
-		int top = (int)(((cache[0] << 8) | cache[1]) & yMask) - yOffset;
-		uint8_t heightCells = (cache[2] & 0x03) + 1;
-		uint8_t widthCells = ((cache[2] >> 2) & 0x03) + 1;
-
-		//Sprite masking: a sprite at X=0 hides all following sprites, if a sprite with X!=0 was found before it on the line (or the previous line reached the pixel limit)
-		if(xpos == 0) {
-			if(nonZeroXFound) {
-				masked = true;
-			}
-		} else {
-			nonZeroXFound = true;
-		}
-
-		bool hflip = pattern & 0x0800;
-		bool vflip = pattern & 0x1000;
-		uint8_t attributes = ((pattern >> 8) & 0x80) | ((pattern >> 9) & 0x30);
-
-		int row = line - top;
-		if(vflip) {
-			row = heightCells * tileHeight - 1 - row;
-		}
-		uint8_t cellRow = row >> tileShift;
-		uint8_t pixelRow = row & (tileHeight - 1);
-
-		for(int cell = 0; cell < widthCells; cell++) {
-			if(cellCount >= maxCellsPerLine) {
-				dotOverflow = true;
-				if(!_removeSpriteLimit) {
-					break;
-				}
-			}
-			cellCount++;
-
-			if(masked) {
-				continue;
-			}
-
-			uint8_t cellCol = hflip ? (widthCells - 1 - cell) : cell;
-			uint16_t tile = ((pattern & 0x7FF) + cellCol * heightCells + cellRow) & 0x7FF;
-			uint16_t patternAddr = im2 ? (((tile & 0x3FF) << 6) + pixelRow * 4) : ((tile << 5) + pixelRow * 4);
-			int startX = (int)xpos - 128 + cell * 8;
-			if(startX >= _renderWidth || startX + 8 <= 0) {
-				continue;
-			}
-
-			for(int px = 0; px < 8; px++) {
-				int x = startX + px;
-				if(x < 0 || x >= _renderWidth) {
-					continue;
-				}
-
-				uint8_t col = hflip ? (7 - px) : px;
-				uint8_t data = _videoRam[(patternAddr + (col >> 1)) & 0xFFFF];
-				uint8_t color = (col & 0x01) ? (data & 0x0F) : (data >> 4);
-				if(color == 0) {
-					continue;
-				}
-
-				if(_lineS[x] & 0x0F) {
-					_state.SpriteCollision = true;
-				} else {
-					_lineS[x] = attributes | color;
-				}
-			}
-		}
-
-		if(dotOverflow && !_removeSpriteLimit) {
-			break;
-		}
-	}
-
-	if(dotOverflow) {
-		_state.SpriteOverflow = true;
-	}
-	_prevLineDotOverflow = dotOverflow;
-
-	if(_disableSprites) {
-		memset(_lineS, 0, sizeof(_lineS));
-	}
-}
-
-uint16_t MdVdp::GetCurrentRenderX()
-{
-	const LineTiming& timing = _timings[_lineH40 ? 1 : 0];
-	uint16_t q = timing.PixelAtClock[std::min<uint16_t>(_state.HClock, MdConstants::ClocksPerScanline - 1)];
-	uint16_t p = (q + timing.VCounterChangePixel) % timing.PixelCount;
-	uint16_t x = (p + timing.PixelCount - timing.ActiveStart) % timing.PixelCount;
-	if(x > timing.Width + 64) {
-		//Before the start of the active display
-		return 0;
-	}
-	return std::min(x, _renderWidth);
-}
-
-void MdVdp::RefreshPalette()
-{
-	for(int i = 0; i < 0x40; i++) {
-		uint16_t value = (_colorRam[i * 2] << 8) | _colorRam[i * 2 + 1];
-		_palette[i] = ((value >> 3) & 0x1C0) | ((value >> 2) & 0x38) | ((value >> 1) & 0x07);
-	}
-}
-
-void MdVdp::CompositeTo(uint16_t x)
-{
-	if(_renderLine < 0) {
-		return;
-	}
-
-	x = std::min(x, _renderWidth);
-	if(x <= _compositedX) {
+	if(startPixel >= GetActivePixels(_latched) - 16) {
+		//Ignore writes that occur very close to the end of the active display
 		return;
 	}
 
 	RefreshPalette();
-	uint16_t* out = _renderBuffer + _renderRow * MdConstants::MaxScreenWidth;
-	uint8_t backdrop = _state.BackgroundColorIndex;
 
-	if(!_state.Mode5) {
-		memset(out + _compositedX, 0, (x - _compositedX) * sizeof(uint16_t));
-		_compositedX = x;
-		return;
+	RasterLine line = GetRasterLine(scanline);
+	int32_t row = GetFrameBufferRow(line);
+	uint8_t interlaceMode = _interlacedFrame ? _latched.InterlaceMode : 0;
+	bool odd = _interlacedFrame && _interlacedOdd;
+
+	switch(interlaceMode) {
+		default:
+			DoRenderScanline(scanline, line, startPixel, row, false);
+			break;
+
+		case 1:
+			DoRenderScanline(scanline, line, startPixel, row >= 0 ? row * 2 + (odd ? 1 : 0) : -1, false);
+			break;
+
+		case 3:
+			if(!odd) {
+				DoRenderScanline(scanline, { (uint16_t)((line.Line * 2) & 0x1FF), line.InVBorder }, startPixel, row >= 0 ? row * 2 : -1, false);
+			} else {
+				DoRenderScanline(scanline, { (uint16_t)((line.Line * 2 + 1) & 0x1FF), line.InVBorder }, startPixel, row >= 0 ? row * 2 + 1 : -1, true);
+			}
+			break;
 	}
+}
 
-	if(!_state.DisplayEnabled) {
-		for(uint16_t i = _compositedX; i < x; i++) {
-			out[i] = _palette[backdrop];
+void MdVdp::DoRenderScanline(uint16_t scanline, RasterLine line, uint16_t startPixel, int32_t row, bool oddLine)
+{
+	SpriteBuffers& sprites = oddLine ? _spritesOdd : _sprites;
+
+	if(!_regs.DisplayEnabled) {
+		if(row >= 0) {
+			FillRow(row, startPixel, GetBackdropIndex());
 		}
-		_compositedX = x;
+
+		//Clear the sprite line buffer in case the display gets enabled during the active display
+		memset(sprites.Pixels, 0, sizeof(sprites.Pixels));
 		return;
 	}
 
-	bool shadowHighlight = _state.ShadowHighlightEnabled;
-	for(uint16_t i = _compositedX; i < x; i++) {
-		if(i < 8 && _state.LeftColumnBlank) {
-			out[i] = _palette[backdrop];
+	uint16_t activeLines = GetActiveScanlines(_latched);
+	bool bgForced = _forcedPlane == ForcedPlane::PlaneA || _forcedPlane == ForcedPlane::PlaneB;
+
+	if(startPixel == 0) {
+		//Sprite pixels are not rendered inside the vertical border, except on the line immediately after the active display
+		if(!line.InVBorder || _vBorderForgotten || line.Line == activeLines) {
+			RenderSpritePixels(line, sprites);
+		}
+
+		if(_showHorizontalBorder && bgForced) {
+			//The previous line's right border depends on the sprite tiles fetched for the current line
+			RasterLine prevLine = line.Line == 0 ? RasterLine { 511, true } : RasterLine { (uint16_t)(line.Line - 1), (uint16_t)(line.Line - 1) >= activeLines };
+			if(!prevLine.InVBorder || _vBorderForgotten || prevLine.Line == 511) {
+				int32_t prevRow = GetFrameBufferRow(prevLine);
+				if(prevRow >= 0) {
+					RenderRightBorder(prevRow);
+				}
+			}
+		}
+	}
+
+	if(row < 0) {
+		return;
+	}
+
+	if(line.InVBorder && !_vBorderForgotten && line.Line != 511) {
+		RenderVerticalBorderLine(scanline, row, startPixel);
+		return;
+	}
+
+	int16_t activePixels = (int16_t)GetActivePixels(_latched);
+	int16_t startCol;
+	int16_t endCol;
+	int16_t pixelOffset;
+	if(_showHorizontalBorder) {
+		int16_t leftBorder = (int16_t)GetLeftBorder(_latched.H40);
+		startCol = startPixel == 0 ? 0 : (int16_t)startPixel + leftBorder;
+		endCol = leftBorder + activePixels + MdVdp::RightBorder;
+		pixelOffset = leftBorder;
+	} else {
+		startCol = (int16_t)startPixel;
+		endCol = activePixels;
+		pixelOffset = 0;
+	}
+
+	RenderBackgrounds(line.Line, startCol, endCol, pixelOffset);
+	RenderWindow(line.Line, startCol, endCol, pixelOffset);
+	MergeLayers(line, row, startCol, endCol, pixelOffset, oddLine);
+
+	if(_showHorizontalBorder) {
+		RenderLeftBorder(row);
+		if(!bgForced) {
+			RenderRightBorder(row);
+		}
+	}
+
+	for(uint8_t i = 0; i < _cramDotCount; i++) {
+		uint32_t width = GetCurrentScreenWidth();
+		uint32_t col = _cramDots[i].X + pixelOffset;
+		if(col < width && row * width + col < MdConstants::PixelCount) {
+			_currentOutputBuffer[row * width + col] = _cramDots[i].Color;
+		}
+	}
+}
+
+void MdVdp::FillRow(uint32_t row, uint16_t startPixel, uint8_t colorIndex)
+{
+	uint32_t width = GetCurrentScreenWidth();
+	uint32_t leftBorder = _showHorizontalBorder ? GetLeftBorder(_frameH40) : 0;
+	uint32_t startCol = startPixel == 0 ? 0 : startPixel + leftBorder;
+	for(uint32_t col = startCol; col < width; col++) {
+		SetPixel(row, col, colorIndex);
+	}
+}
+
+void MdVdp::SetPixel(uint32_t row, uint32_t col, uint8_t colorIndex, PixelMode mode)
+{
+	uint32_t width = GetCurrentScreenWidth();
+	uint32_t offset = row * width + col;
+	if(col < width && offset < MdConstants::PixelCount) {
+		_currentOutputBuffer[offset] = _palette[colorIndex & 0x3F] | ((uint16_t)mode << 9);
+	}
+}
+
+uint16_t MdVdp::ReadVScroll(uint8_t plane, int16_t column)
+{
+	uint16_t vscroll;
+	if(!_latched.VScroll2Cell) {
+		vscroll = _latchedVScroll[plane];
+	} else {
+		auto readVsram = [this](uint8_t index) -> uint16_t { return (_vsRam[index * 2] << 8) | _vsRam[index * 2 + 1]; };
+		int16_t columns = (int16_t)(GetActivePixels(_latched) / 16);
+		if(column < 0) {
+			//Column -1 uses VSRAM[$4C] & VSRAM[$4E] for both planes in H40 mode, and 0 in H32 mode
+			vscroll = _latched.H40 ? (readVsram(38) & readVsram(39)) : 0;
+		} else if(column < columns) {
+			vscroll = readVsram((uint8_t)(column * 2 + plane));
+		} else {
+			vscroll = 0;
+		}
+	}
+
+	return vscroll & (_latched.InterlaceMode == 3 ? 0x7FF : 0x3FF);
+}
+
+void MdVdp::RenderBackgrounds(uint16_t line, int16_t startCol, int16_t endCol, int16_t pixelOffset)
+{
+	bool im2 = _latched.InterlaceMode == 3;
+	uint8_t cellShift = im2 ? 4 : 3;
+
+	auto sizeToPixels = [](uint8_t size) -> uint16_t {
+		switch(size) {
+			default:
+			case 0: return 32 * 8;
+			case 1: return 64 * 8;
+			case 2: return 32 * 8;
+			case 3: return 128 * 8;
+		}
+	};
+
+	uint16_t hSizePixels;
+	uint16_t vSizePixels;
+	if(_latched.HScrollSize == 2) {
+		//An invalid H size always produces a 32x1 plane
+		hSizePixels = 32 * 8;
+		vSizePixels = 8;
+	} else if(_latched.VScrollSize == 2) {
+		//An invalid V size behaves like a size of 32 (when the H size is valid)
+		hSizePixels = sizeToPixels(_latched.HScrollSize);
+		vSizePixels = 32 * 8;
+	} else {
+		hSizePixels = sizeToPixels(_latched.HScrollSize);
+		vSizePixels = sizeToPixels(_latched.VScrollSize);
+	}
+
+	uint16_t hSizeCells = hSizePixels / 8;
+	uint16_t nametableWidth = _latched.HScrollSize == 2 ? 1 : hSizeCells;
+	uint16_t lineMask = im2 ? ((vSizePixels << 1) - 1) : (vSizePixels - 1);
+	int16_t activeCells = (int16_t)(GetActivePixels(_latched) / 8);
+
+	for(uint8_t plane = 0; plane < 2; plane++) {
+		bool planeA = plane == 0;
+		TilePixel* buffer = planeA ? _planeAPixels : _planeBPixels;
+		if(planeA ? _disablePlaneA : _disablePlaneB) {
+			memset(buffer, 0, sizeof(TilePixel) * MdVdp::BgBufferWidth);
 			continue;
 		}
 
-		uint8_t a = _lineA[i];
-		uint8_t b = _lineB[i];
-		uint8_t s = _lineS[i];
+		uint16_t ntBase = planeA ? _latched.PlaneATable : _latched.PlaneBTable;
+		uint16_t hscroll = _latchedHScroll[plane];
+		uint16_t coarseScroll = hscroll & ~0x0F;
+		int16_t fineScroll = hscroll & 0x0F;
 
-		uint8_t planeColor;
-		bool planePriority;
-		if((a & 0x80) && (a & 0x0F)) {
-			planeColor = a;
-			planePriority = true;
-		} else if((b & 0x80) && (b & 0x0F)) {
-			planeColor = b;
-			planePriority = true;
-		} else if(a & 0x0F) {
-			planeColor = a;
-			planePriority = false;
-		} else if(b & 0x0F) {
-			planeColor = b;
-			planePriority = false;
-		} else {
-			planeColor = backdrop;
-			planePriority = false;
-		}
+		//The VDP always renders a column partially or fully to the left of the active display (column -1)
+		int16_t startColumn = (fineScroll != 0 || _showHorizontalBorder) ? -1 : 0;
+		int16_t endColumn = activeCells / 2;
 
-		bool spriteOnTop = (s & 0x0F) && ((s & 0x80) || !planePriority);
+		for(int16_t column = startColumn; column < endColumn; column++) {
+			uint16_t vscroll = ReadVScroll(plane, column);
+			uint16_t scrolledLine = (line + vscroll) & lineMask;
+			uint16_t vCell = scrolledLine >> cellShift;
+			uint16_t columnCell = (uint16_t)((uint16_t)(16 * column) - coarseScroll) / 8;
 
-		if(!shadowHighlight) {
-			out[i] = _palette[(spriteOnTop ? s : planeColor) & 0x3F];
-		} else {
-			//Pixels are shadowed when neither plane has its priority bit set (regardless of transparency)
-			PixelMode mode = ((a & 0x80) || (b & 0x80)) ? PixelMode::Normal : PixelMode::Shadow;
-			uint8_t color = planeColor & 0x3F;
-			if(spriteOnTop) {
-				uint8_t spriteColor = s & 0x3F;
-				if(spriteColor == 0x3E) {
-					//Highlight operator
-					mode = mode == PixelMode::Shadow ? PixelMode::Normal : PixelMode::Highlight;
-				} else if(spriteColor == 0x3F) {
-					//Shadow operator
-					mode = PixelMode::Shadow;
-				} else {
-					color = spriteColor;
-					if((s & 0x80) || (spriteColor & 0x0F) == 0x0E) {
-						mode = PixelMode::Normal;
+			for(int16_t cellOffset = 0; cellOffset < 2; cellOffset++) {
+				int16_t cellCol = 16 * column + 8 * cellOffset + fineScroll + pixelOffset;
+				if(cellCol + 8 <= startCol || cellCol >= endCol) {
+					continue;
+				}
+
+				uint16_t hCell = (columnCell + cellOffset) & (hSizeCells - 1);
+
+				//Nametables are limited to 8KB
+				uint16_t ntAddr = (ntBase + ((2 * (vCell * nametableWidth + hCell)) & 0x1FFF)) & 0xFFFF;
+				uint16_t entry = (_videoRam[ntAddr] << 8) | _videoRam[(ntAddr + 1) & 0xFFFF];
+				uint8_t palette = (entry >> 13) & 0x03;
+				bool priority = entry & 0x8000;
+				bool vflip = entry & 0x1000;
+				bool hflip = entry & 0x0800;
+
+				if(!planeA) {
+					_lastScrollBPalettes[0] = _lastScrollBPalettes[1];
+					_lastScrollBPalettes[1] = palette;
+				}
+
+				uint16_t cellHeight = 1 << cellShift;
+				uint16_t cellRow = vflip ? (cellHeight - 1 - (scrolledLine & (cellHeight - 1))) : (scrolledLine & (cellHeight - 1));
+				uint16_t rowAddr = (uint16_t)((4 * cellHeight) * (entry & 0x7FF) + 4 * cellRow);
+
+				for(int16_t i = 0; i < 8; i++) {
+					int16_t col = cellCol + i;
+					if(col < startCol || col >= endCol) {
+						continue;
 					}
+
+					uint8_t px = hflip ? (7 - i) : i;
+					uint8_t data = _videoRam[(rowAddr + (px >> 1)) & 0xFFFF];
+					buffer[col] = { (uint8_t)((px & 0x01) ? (data & 0x0F) : (data >> 4)), palette, priority };
 				}
 			}
-			out[i] = _palette[color] | ((uint16_t)mode << 9);
+		}
+	}
+}
+
+void MdVdp::RenderWindow(uint16_t line, int16_t startCol, int16_t endCol, int16_t pixelOffset)
+{
+	if(_disableWindow) {
+		return;
+	}
+
+	uint16_t activePixels = GetActivePixels(_latched);
+	uint16_t windowStart;
+	uint16_t windowEnd;
+	bool inWindowRows = _latched.WindowDown ? (line / 8 >= _latched.WindowY) : (line / 8 < _latched.WindowY);
+	if(inWindowRows) {
+		windowStart = 0;
+		windowEnd = activePixels;
+	} else if(_latched.WindowRight) {
+		windowStart = std::min<uint16_t>(8 * _latched.WindowX, activePixels);
+		windowEnd = activePixels;
+	} else {
+		windowStart = 0;
+		windowEnd = std::min<uint16_t>(8 * _latched.WindowX, activePixels);
+	}
+
+	if(windowStart >= windowEnd) {
+		return;
+	}
+
+	uint8_t cellShift = _latched.InterlaceMode == 3 ? 4 : 3;
+	uint16_t cellHeight = 1 << cellShift;
+	uint16_t widthCells = _latched.H40 ? 64 : 32;
+	uint16_t vCell = line >> cellShift;
+
+	for(uint16_t hCell = windowStart / 8; hCell < windowEnd / 8; hCell++) {
+		int16_t cellCol = (int16_t)(8 * hCell) + pixelOffset;
+		if(cellCol + 8 <= startCol || cellCol >= endCol) {
+			continue;
+		}
+
+		uint16_t ntAddr = (_latched.WindowTable + ((2 * (vCell * widthCells + hCell)) & 0x1FFF)) & 0xFFFF;
+		uint16_t entry = (_videoRam[ntAddr] << 8) | _videoRam[(ntAddr + 1) & 0xFFFF];
+		uint8_t palette = (entry >> 13) & 0x03;
+		bool priority = entry & 0x8000;
+		bool vflip = entry & 0x1000;
+		bool hflip = entry & 0x0800;
+		uint16_t cellRow = vflip ? (cellHeight - 1 - (line & (cellHeight - 1))) : (line & (cellHeight - 1));
+		uint16_t rowAddr = (uint16_t)((4 * cellHeight) * (entry & 0x7FF) + 4 * cellRow);
+
+		for(int16_t i = 0; i < 8; i++) {
+			int16_t col = cellCol + i;
+			if(col < startCol || col >= endCol) {
+				continue;
+			}
+
+			//The window replaces plane A
+			uint8_t px = hflip ? (7 - i) : i;
+			uint8_t data = _videoRam[(rowAddr + (px >> 1)) & 0xFFFF];
+			_planeAPixels[col] = { (uint8_t)((px & 0x01) ? (data & 0x0F) : (data >> 4)), palette, priority };
+		}
+	}
+}
+
+void MdVdp::MergeLayers(RasterLine line, uint32_t row, uint32_t startCol, uint32_t endCol, int16_t pixelOffset, bool oddLine)
+{
+	SpriteBuffers& sprites = oddLine ? _spritesOdd : _sprites;
+	uint8_t backdrop = GetBackdropIndex();
+	int16_t activePixels = (int16_t)GetActivePixels(_latched);
+	bool shadowHighlight = _latched.ShadowHighlight;
+	bool inVBorder = line.InVBorder && !_vBorderForgotten;
+
+	for(uint32_t col = startCol; col < endCol; col++) {
+		int16_t pixel = (int16_t)col - pixelOffset;
+		TilePixel s = {};
+		if(!_disableSprites && pixel >= 0 && pixel < 320) {
+			s = sprites.Pixels[pixel];
+		}
+		TilePixel a = _planeAPixels[col];
+		TilePixel b = _planeBPixels[col];
+
+		uint8_t sIndex = (s.Palette << 4) | s.Color;
+		uint8_t aIndex = (a.Palette << 4) | a.Color;
+		uint8_t bIndex = (b.Palette << 4) | b.Color;
+
+		bool inHBorder = pixel < 0 || pixel >= activePixels;
+		if(inHBorder || inVBorder || _debugDisplayDisabled) {
+			//Outside of the active display (or when the debug register disables the display), the forced plane is shown as-is
+			uint8_t index;
+			switch(_forcedPlane) {
+				default:
+				case ForcedPlane::Backdrop: index = backdrop; break;
+				case ForcedPlane::Sprite: index = inHBorder ? 0 : sIndex; break;
+				case ForcedPlane::PlaneA: index = aIndex; break;
+				case ForcedPlane::PlaneB: index = bIndex; break;
+			}
+			SetPixel(row, col, index);
+			continue;
+		}
+
+		if(_latched.LeftColumnBlank && pixel < 8) {
+			//Register #0 bit 5 blanks the left-most 8 pixels
+			SetPixel(row, col, backdrop);
+			continue;
+		}
+
+		PixelMode mode = (shadowHighlight && !a.Priority && !b.Priority) ? PixelMode::Shadow : PixelMode::Normal;
+
+		//Order the layers by priority (front-most first)
+		const TilePixel* layers[3];
+		bool isSprite[3];
+		auto setOrder = [&](const TilePixel* l0, bool s0, const TilePixel* l1, bool s1, const TilePixel* l2, bool s2) {
+			layers[0] = l0; isSprite[0] = s0;
+			layers[1] = l1; isSprite[1] = s1;
+			layers[2] = l2; isSprite[2] = s2;
+		};
+
+		if(s.Priority || (!a.Priority && !b.Priority)) {
+			if(!s.Priority || a.Priority || !b.Priority) {
+				setOrder(&s, true, &a, false, &b, false);
+			} else {
+				setOrder(&s, true, &b, false, &a, false);
+			}
+		} else if(a.Priority && !b.Priority) {
+			setOrder(&a, false, &s, true, &b, false);
+		} else if(!a.Priority && b.Priority) {
+			setOrder(&b, false, &s, true, &a, false);
+		} else {
+			setOrder(&a, false, &b, false, &s, true);
+		}
+
+		uint8_t maskIndex;
+		switch(_forcedPlane) {
+			default:
+			case ForcedPlane::Backdrop: maskIndex = 0x3F; break;
+			case ForcedPlane::Sprite: maskIndex = sIndex; break;
+			case ForcedPlane::PlaneA: maskIndex = aIndex; break;
+			case ForcedPlane::PlaneB: maskIndex = bIndex; break;
+		}
+
+		bool found = false;
+		for(int i = 0; i < 3; i++) {
+			const TilePixel* layer = layers[i];
+			if(layer->Color == 0) {
+				continue;
+			}
+
+			if(shadowHighlight && isSprite[i] && layer->Palette == 3) {
+				if(layer->Color == 14) {
+					//Highlight operator - the sprite is transparent and the pixel below it is highlighted
+					mode = mode == PixelMode::Shadow ? PixelMode::Normal : PixelMode::Highlight;
+					continue;
+				} else if(layer->Color == 15) {
+					//Shadow operator
+					mode = PixelMode::Shadow;
+					continue;
+				}
+			}
+
+			//When the debug register forces a plane, its color index masks the color of the front-most pixel (Overdrive 2 uses this)
+			uint8_t index = ((layer->Palette << 4) | layer->Color) & maskIndex;
+
+			//Sprite color 14 is never shadowed/highlighted, and neither are sprites with the priority bit set
+			if(shadowHighlight && isSprite[i] && (layer->Color == 14 || s.Priority)) {
+				mode = PixelMode::Normal;
+			}
+
+			SetPixel(row, col, index, mode);
+			found = true;
+			break;
+		}
+
+		if(!found) {
+			uint8_t index;
+			switch(_forcedPlane) {
+				default:
+				case ForcedPlane::Backdrop: index = backdrop; break;
+				case ForcedPlane::Sprite: index = sIndex; break;
+				case ForcedPlane::PlaneA: index = aIndex; break;
+				case ForcedPlane::PlaneB: index = bIndex; break;
+			}
+			SetPixel(row, col, index, mode);
+		}
+	}
+}
+
+void MdVdp::RenderVerticalBorderLine(uint16_t scanline, uint32_t row, uint16_t startPixel)
+{
+	switch(_forcedPlane) {
+		case ForcedPlane::Backdrop:
+			FillRow(row, startPixel, GetBackdropIndex());
+			break;
+
+		case ForcedPlane::Sprite:
+			FillRow(row, startPixel, 0);
+			break;
+
+		case ForcedPlane::PlaneA:
+		case ForcedPlane::PlaneB: {
+			//The VRAM chip keeps cycling through the 256 bytes in the VRAM row of the last address that was fetched during rendering
+			//(the 4th sprite tile fetched for the line after the active display) - the VDP shows these bytes as pixels, using
+			//the last palettes used by plane B. A VRAM row contains 64 4-byte groups, each 1KB apart in VRAM's address space.
+			bool h40 = _regs.H40;
+			uint32_t width = GetCurrentScreenWidth();
+			uint32_t startCol;
+			uint32_t endPixel;
+			if(_showHorizontalBorder) {
+				startCol = 0;
+				endPixel = width;
+			} else {
+				startCol = GetLeftBorder(h40);
+				endPixel = startCol + (h40 ? 320 : 256);
+			}
+
+			uint16_t groupOffset = (uint16_t)((uint16_t)(scanline + 2 - GetActiveScanlines(_regs)) * ((h40 ? 420 : 342) / 2));
+			uint16_t addr = (uint16_t)(_sprites.LastTileAddresses[3] + groupOffset * 1024);
+			bool oddGroup = false;
+			uint8_t group[4] = {};
+
+			for(uint32_t pixel = 0; pixel < endPixel; pixel++) {
+				uint32_t tileCol = (pixel + 3) % 8;
+				if(pixel == 0 || tileCol == 0) {
+					for(int i = 0; i < 4; i++) {
+						group[i] = _videoRam[(uint16_t)(addr + i)];
+					}
+					addr += oddGroup ? 1024 : 7 * 1024;
+					oddGroup = !oddGroup;
+				}
+
+				if(pixel < startCol) {
+					continue;
+				}
+
+				uint8_t palette = _lastScrollBPalettes[(pixel / 8) & 0x01];
+				uint8_t data = group[tileCol >> 1];
+				uint8_t color = (tileCol & 0x01) ? (data & 0x0F) : (data >> 4);
+				SetPixel(row, pixel - startCol, (palette << 4) | color);
+			}
+			break;
+		}
+	}
+}
+
+void MdVdp::RenderLeftBorder(uint32_t row)
+{
+	uint32_t leftBorder = GetLeftBorder(_latched.H40);
+
+	switch(_forcedPlane) {
+		case ForcedPlane::Backdrop:
+			for(uint32_t col = 0; col < leftBorder; col++) {
+				SetPixel(row, col, GetBackdropIndex());
+			}
+			break;
+
+		case ForcedPlane::Sprite:
+			for(uint32_t col = 0; col < leftBorder; col++) {
+				SetPixel(row, col, 0);
+			}
+			break;
+
+		case ForcedPlane::PlaneA: {
+			//The hardware shows unspecified garbage here - use color 0
+			uint32_t borderPixels = _latchedHScroll[0] & 0x0F;
+			uint32_t borderOffset = 16 - leftBorder;
+			uint32_t endCol = borderPixels > borderOffset ? borderPixels - borderOffset : 0;
+			for(uint32_t col = 0; col < endCol; col++) {
+				SetPixel(row, col, 0);
+			}
+			break;
+		}
+
+		case ForcedPlane::PlaneB: {
+			//Pixels from sprite tiles 36 and 37, using the palettes from the last 2 tiles of plane B on the previous line
+			uint32_t borderPixels = _latchedHScroll[1] & 0x0F;
+			uint32_t borderOffset = 16 - leftBorder;
+			uint32_t endCol = borderPixels > borderOffset ? borderPixels - borderOffset : 0;
+			for(uint32_t col = 0; col < endCol; col++) {
+				uint16_t pixel = (uint16_t)(15 - (endCol - 1 - col));
+				RenderHorizontalBorderSpritePixel(row, col, pixel, 36);
+			}
+			break;
+		}
+	}
+}
+
+void MdVdp::RenderRightBorder(uint32_t row)
+{
+	uint32_t width = GetCurrentScreenWidth();
+	uint32_t borderStart = width - MdVdp::RightBorder;
+
+	switch(_forcedPlane) {
+		case ForcedPlane::Backdrop:
+			for(uint32_t col = borderStart; col < width; col++) {
+				SetPixel(row, col, GetBackdropIndex());
+			}
+			break;
+
+		case ForcedPlane::Sprite:
+			for(uint32_t col = borderStart; col < width; col++) {
+				SetPixel(row, col, 0);
+			}
+			break;
+
+		case ForcedPlane::PlaneA:
+		case ForcedPlane::PlaneB: {
+			//Pixels from sprite tiles 0-1 (plane A) or 4-5 (plane B), using the palettes from the last 2 tiles of plane B on the previous line
+			bool planeA = _forcedPlane == ForcedPlane::PlaneA;
+			uint32_t lastColumnEnd = borderStart + std::min<uint32_t>(_latchedHScroll[planeA ? 0 : 1] & 0x0F, MdVdp::RightBorder);
+			for(uint32_t col = lastColumnEnd; col < width; col++) {
+				RenderHorizontalBorderSpritePixel(row, col, (uint16_t)(col - lastColumnEnd), planeA ? 0 : 4);
+			}
+			break;
+		}
+	}
+}
+
+void MdVdp::RenderHorizontalBorderSpritePixel(uint32_t row, uint32_t col, uint16_t pixel, uint16_t baseSprite)
+{
+	uint16_t tile = baseSprite + pixel / 8;
+	uint16_t tileCol = pixel % 8;
+	uint16_t addr = (uint16_t)(_sprites.LastTileAddresses[tile % 40] + (tileCol >> 1));
+	uint8_t data = _videoRam[addr];
+	uint8_t color = (tileCol & 0x01) ? (data & 0x0F) : (data >> 4);
+	uint8_t palette = _lastScrollBPalettes[(pixel / 8) & 0x01];
+	SetPixel(row, col, (palette << 4) | color);
+}
+
+void MdVdp::ScanSprites(uint16_t scanline)
+{
+	RasterLine line = GetRasterLine(scanline);
+
+	//In the vertical border, sprites are only scanned for the line immediately after the active display
+	if(line.InVBorder && !_vBorderForgotten && scanline != GetActiveScanlines(_regs)) {
+		return;
+	}
+
+	if(_latched.InterlaceMode == 3 && _interlacedFrame) {
+		DoSpriteScan({ (uint16_t)((line.Line * 2) & 0x1FF), line.InVBorder }, _sprites);
+		DoSpriteScan({ (uint16_t)((line.Line * 2 + 1) & 0x1FF), line.InVBorder }, _spritesOdd);
+	} else {
+		DoSpriteScan(line, _sprites);
+		_spritesOdd.ScannedCount = 0;
+	}
+}
+
+void MdVdp::DoSpriteScan(RasterLine line, SpriteBuffers& buffers)
+{
+	buffers.ScannedCount = 0;
+
+	bool h40 = _latched.H40;
+	uint32_t tableLength = h40 ? 80 : 64;
+
+	//Disabling the display during part of HBlank reduces the number of sprites scanned (approximation)
+	uint32_t maxToScan = tableLength > _pixelsDisabledDuringHblank ? tableLength - _pixelsDisabledDuringHblank : 0;
+
+	bool im2 = _latched.InterlaceMode == 3 && _interlacedFrame;
+	uint16_t displayMask = im2 ? 0x3FF : 0x1FF;
+	uint16_t spriteLine = ((im2 ? 0x100 : 0x80) + line.Line) & displayMask;
+	uint16_t cellHeight = im2 ? 16 : 8;
+	uint8_t maxPerLine = h40 ? 20 : 16;
+
+	uint32_t index = 0;
+	for(uint32_t i = 0; i < maxToScan; i++) {
+		uint8_t* cache = &_latchedSpriteCache[index * 4];
+		uint16_t top = ((cache[0] << 8) | cache[1]) & displayMask;
+		uint16_t bottom = top + cellHeight * ((cache[2] & 0x03) + 1);
+		if(spriteLine >= top && spriteLine < bottom) {
+			if(buffers.ScannedCount >= maxPerLine) {
+				_spriteOverflow = true;
+				if(!_removeSpriteLimit) {
+					break;
+				}
+			}
+			if(buffers.ScannedCount < 80) {
+				buffers.ScannedIds[buffers.ScannedCount++] = (uint8_t)index;
+			}
+		}
+
+		index = cache[3] & 0x7F;
+		if(index == 0 || index >= tableLength) {
+			break;
+		}
+	}
+}
+
+void MdVdp::FetchSpriteAttributes()
+{
+	DoSpriteAttributeFetch(_sprites);
+	if(_latched.InterlaceMode == 3 && _interlacedFrame) {
+		DoSpriteAttributeFetch(_spritesOdd);
+	} else {
+		_spritesOdd.SpriteCount = 0;
+	}
+}
+
+void MdVdp::DoSpriteAttributeFetch(SpriteBuffers& buffers)
+{
+	buffers.SpriteCount = 0;
+	uint16_t table = (uint16_t)(_regs.SpriteTable & 0xFFFF);
+
+	for(uint8_t i = 0; i < buffers.ScannedCount; i++) {
+		uint8_t id = buffers.ScannedIds[i];
+		uint8_t* cache = &_spriteCache[id * 4];
+		uint16_t addr = (uint16_t)(table + 8 * id);
+		uint8_t b0 = _videoRam[(uint16_t)(addr + 4)];
+		uint8_t b1 = _videoRam[(uint16_t)(addr + 5)];
+		uint8_t b2 = _videoRam[(uint16_t)(addr + 6)];
+		uint8_t b3 = _videoRam[(uint16_t)(addr + 7)];
+
+		SpriteInfo& sprite = buffers.Sprites[buffers.SpriteCount++];
+		sprite.Y = (cache[0] << 8) | cache[1];
+		sprite.HeightCells = (cache[2] & 0x03) + 1;
+		sprite.WidthCells = ((cache[2] >> 2) & 0x03) + 1;
+		sprite.Priority = b0 & 0x80;
+		sprite.Palette = (b0 >> 5) & 0x03;
+		sprite.VFlip = b0 & 0x10;
+		sprite.HFlip = b0 & 0x08;
+		sprite.Pattern = ((b0 & 0x07) << 8) | b1;
+		sprite.X = ((b2 & 0x01) << 8) | b3;
+	}
+}
+
+void MdVdp::RenderSpritePixels(RasterLine line, SpriteBuffers& buffers)
+{
+	memset(buffers.Pixels, 0, sizeof(buffers.Pixels));
+
+	bool h40 = _latched.H40;
+	uint16_t activePixels = h40 ? 320 : 256;
+	bool im2 = _latched.InterlaceMode == 3 && _interlacedFrame;
+	uint16_t displayMask = im2 ? 0x3FF : 0x1FF;
+	uint16_t spriteLine = (im2 ? 0x100 : 0x80) + line.Line;
+	uint8_t cellShift = im2 ? 4 : 3;
+
+	//Disabling the display during HBlank also reduces the number of sprite tiles that can be fetched (approximation)
+	uint16_t tilesSkipped = (_pixelsDisabledDuringHblank + 1) / 2;
+	uint16_t maxTiles = activePixels / 8;
+	maxTiles = maxTiles > tilesSkipped ? maxTiles - tilesSkipped : 0;
+
+	uint16_t tilesFetched = 0;
+	bool dotOverflow = false;
+
+	//A sprite at X=0 masks all lower priority sprites on the line, if a sprite with X!=0 was found before it (or the previous line had a dot overflow)
+	bool foundNonZero = _dotOverflowOnPrevLine;
+	bool maskSprites = false;
+
+	for(uint8_t i = 0; i < buffers.SpriteCount; i++) {
+		SpriteInfo& sprite = buffers.Sprites[i];
+		if(sprite.X == 0 && foundNonZero) {
+			maskSprites = true;
+		} else if(sprite.X != 0) {
+			foundNonZero = true;
+		}
+
+		//Only the lowest 5 bits of the difference between the line and the sprite's Y position are used - the Y position
+		//can change between the sprite scan and this point (Overdrive 2's textured cube depends on this)
+		uint16_t spriteRow = (uint16_t)(spriteLine - (sprite.Y & displayMask)) & 0x1F;
+		if(sprite.VFlip) {
+			spriteRow = (uint16_t)(((sprite.HeightCells << cellShift) - 1) - spriteRow) & 0x1F;
+		}
+
+		bool limitReached = false;
+		for(uint8_t cell = 0; cell < sprite.WidthCells; cell++) {
+			if(tilesFetched >= maxTiles) {
+				_spriteOverflow = true;
+				dotOverflow = true;
+				if(!_removeSpriteLimit) {
+					limitReached = true;
+					break;
+				}
+			}
+
+			uint8_t cellCol = sprite.HFlip ? (sprite.WidthCells - 1 - cell) : cell;
+			uint16_t pattern = (uint16_t)(sprite.Pattern + cellCol * sprite.HeightCells + (spriteRow >> cellShift));
+			uint16_t cellAddr = (uint16_t)((4 << cellShift) * pattern);
+			uint16_t cellRow = spriteRow & ((1 << cellShift) - 1);
+			uint16_t rowAddr = (uint16_t)(cellAddr + 4 * cellRow);
+
+			//The addresses fetched are needed to render the borders (Overdrive 2)
+			if(tilesFetched < maxTiles && tilesFetched < 40) {
+				buffers.LastTileAddresses[tilesFetched] = rowAddr;
+			}
+			tilesFetched++;
+
+			if(maskSprites) {
+				continue;
+			}
+
+			uint16_t cellX = sprite.X + 8 * cell;
+			if(cellX >= 0x80 + activePixels || cellX + 8 <= 0x80) {
+				continue;
+			}
+
+			for(uint8_t px = 0; px < 8; px++) {
+				uint16_t x = cellX + px;
+				if(x < 0x80 || x >= 0x80 + activePixels) {
+					continue;
+				}
+
+				uint8_t srcPx = sprite.HFlip ? (7 - px) : px;
+				uint8_t data = _videoRam[(uint16_t)(rowAddr + (srcPx >> 1))];
+				uint8_t color = (srcPx & 0x01) ? (data & 0x0F) : (data >> 4);
+
+				TilePixel& dst = buffers.Pixels[x - 0x80];
+				if(dst.Color == 0) {
+					//Transparent pixels are always overwritten, even by transparent pixels (Overdrive 2's title screen depends on this)
+					dst = { color, sprite.Palette, sprite.Priority };
+				} else if(color != 0) {
+					_spriteCollision = true;
+				}
+			}
+		}
+
+		if(limitReached) {
+			break;
 		}
 	}
 
-	_compositedX = x;
+	_dotOverflowOnPrevLine = dotOverflow;
 }
 
-void MdVdp::FinishLine()
+MdVdpState& MdVdp::GetState()
 {
-	CompositeTo(_renderWidth);
-	_lineWidths[_renderRow] = _renderWidth;
+	uint8_t* r = _state.Regs;
+	bool vblank;
+	_state.VCounter = GetVCounter(_state.HClock, vblank);
+	_state.HCounter = PixelToInternalH(MclkToPixel(_state.HClock, _regs.H40), _regs.H40);
 
-	int16_t line = _renderLine;
-	_renderLine = -1;
+	_state.AddressReg = _dataAddress;
+	_state.CodeReg = (_isWriteMode ? 0x01 : 0) | (_locationBits << 1) | (_dmaActive ? 0x20 : 0);
+	_state.ControlPending = _controlPending;
 
-	if(line == _activeLines - 1) {
-		EndFrame();
+	_state.FifoCount = _fifoCount;
+	_state.FifoReadPos = _fifoPopIndex;
+	for(int i = 0; i < 4; i++) {
+		_state.Fifo[i].Address = _fifo[i].Address;
+		_state.Fifo[i].Value = _fifo[i].Value;
+		_state.Fifo[i].Code = (uint8_t)_fifo[i].Location;
+		_state.Fifo[i].HalfWritten = _fifo[i].SecondHalf;
 	}
+
+	_state.VerticalIrqPending = _vIntPending;
+	_state.HorizontalIrqPending = _hIntPending;
+	_state.SpriteOverflow = _spriteOverflow;
+	_state.SpriteCollision = _spriteCollision;
+	_state.OddFrame = _interlacedOdd;
+	_state.InVerticalBlank = _inVblank;
+	_state.InHorizontalBlank = (GetStatus() & 0x04) != 0;
+	_state.HIntCounter = (uint8_t)_hIntCounter;
+	_state.HvLatch = _hvLatch;
+	_state.HvLatched = _hvLatched;
+
+	_state.DmaActive = _dmaActive;
+	_state.DmaFillPending = _dmaActive && _state.DmaMode == MdVdpDmaMode::VramFill && !_fillDataReady;
+	_state.DmaFillValue = _fillData;
+	_state.DmaLength = _dmaLength;
+	_state.DmaSource = _dmaSource;
+
+	_state.DisplayEnabled = _regs.DisplayEnabled;
+	_state.H40Mode = _regs.H40;
+	_state.V30Mode = _regs.V30;
+	_state.Mode5 = _regs.Mode5;
+	_state.ShadowHighlightEnabled = _regs.ShadowHighlight;
+	_state.InterlaceMode = (r[12] >> 1) & 0x03;
+	_state.EnableHorizontalIrq = _regs.HIntEnabled;
+	_state.EnableVerticalIrq = _regs.VIntEnabled;
+	_state.EnableDma = _regs.DmaEnabled;
+	_state.EnableExternalIrq = r[11] & 0x08;
+	_state.HvCounterLatchEnabled = _regs.HvCounterStopped;
+	_state.MaskLeftColumn = _regs.LeftColumnBlank;
+	_state.LeftColumnBlank = _regs.LeftColumnBlank;
+	_state.AddressIncrement = _regs.AutoIncrement;
+	_state.BackgroundColorIndex = _regs.BackdropColor;
+	_state.ExtVideoEnabled = r[0] & 0x01;
+
+	_state.PlaneATableAddress = _regs.PlaneATable;
+	_state.PlaneBTableAddress = _regs.PlaneBTable;
+	_state.WindowTableAddress = _regs.WindowTable;
+	_state.SpriteTableAddress = (uint16_t)_regs.SpriteTable;
+	_state.HScrollTableAddress = _regs.HScrollTable;
+
+	constexpr uint8_t planeSizes[4] = { 32, 64, 32, 128 };
+	_state.PlaneWidth = planeSizes[_regs.HScrollSize];
+	_state.PlaneHeight = planeSizes[_regs.VScrollSize];
+	_state.HScrollMode = _regs.HScrollMode;
+	_state.VScrollColumnMode = _regs.VScroll2Cell;
+
+	_state.WindowHPos = _regs.WindowX >> 1;
+	_state.WindowRight = _regs.WindowRight;
+	_state.WindowVPos = _regs.WindowY;
+	_state.WindowDown = _regs.WindowDown;
+
+	return _state;
+}
+
+void MdVdp::DebugSendFrame()
+{
+	RenderedFrame frame(_currentOutputBuffer, GetCurrentScreenWidth(), GetCurrentScreenHeight(), 1.0, _state.FrameCount);
+	_emu->GetVideoDecoder()->UpdateFrame(frame, false, false);
 }
 
 void MdVdp::Serialize(Serializer& s)
@@ -1335,76 +2144,105 @@ void MdVdp::Serialize(Serializer& s)
 	SV(_state.FrameCount);
 	SV(_state.HClock);
 	SV(_state.Scanline);
-	SV(_state.HCounter);
-	SV(_state.VCounter);
 	SVArray(_state.Regs, 0x20);
-
-	SV(_state.AddressReg);
-	SV(_state.CodeReg);
-	SV(_state.ControlPending);
-	SV(_state.ReadBuffer);
-	SV(_state.ReadBufferValid);
-	SV(_state.ReadPending);
-
-	for(int i = 0; i < 4; i++) {
-		SVI(_state.Fifo[i].Address);
-		SVI(_state.Fifo[i].Value);
-		SVI(_state.Fifo[i].Code);
-		SVI(_state.Fifo[i].HalfWritten);
-	}
-	SV(_state.FifoCount);
-	SV(_state.FifoReadPos);
-	SV(_state.LastFifoValue);
-
-	SV(_state.VerticalIrqPending);
-	SV(_state.HorizontalIrqPending);
-	SV(_state.SpriteOverflow);
-	SV(_state.SpriteCollision);
-	SV(_state.OddFrame);
-	SV(_state.InVerticalBlank);
-	SV(_state.InHorizontalBlank);
-	SV(_state.HIntCounter);
-	SV(_state.HvLatch);
-	SV(_state.HvLatched);
-
-	SV(_state.DmaActive);
-	SV(_state.DmaFillPending);
-	SV(_state.DmaFillValue);
 	SV(_state.DmaMode);
-	SV(_state.DmaLength);
-	SV(_state.DmaSource);
-	SV(_state.DmaCopyHasByte);
-	SV(_state.DmaCopyByte);
 
 	SVArray(_videoRam, MdConstants::VideoRamSize);
 	SVArray(_colorRam, MdConstants::ColorRamSize);
 	SVArray(_vsRam, MdConstants::VsRamSize);
 	SVArray(_spriteCache, 80 * 4);
+	SVArray(_latchedSpriteCache, 80 * 4);
 
 	SV(_lastMasterClock);
-	SV(_lineStartClock);
-	SV(_slotIndex);
-	SV(_lineH40);
-	SV(_lineIsActive);
-	SV(_frameV30);
-	SV(_frameInterlaceMode);
-	SV(_totalLines);
-	SV(_activeLines);
-	SV(_vCounterJumpFrom);
-	SV(_vCounterJumpTo);
-	SV(_z80IrqActive);
-	SV(_z80IrqEndClock);
+	SVArray(_latchedHScroll, 2);
+	SVArray(_latchedVScroll, 2);
+	SV(_debugDisplayDisabled);
+	SV(_forcedPlane);
 
-	SV(_renderLine);
-	SV(_renderRow);
-	SV(_renderWidth);
-	SV(_compositedX);
-	SV(_prevLineDotOverflow);
-	SVArray(_lineA, MdConstants::MaxScreenWidth);
-	SVArray(_lineB, MdConstants::MaxScreenWidth);
-	SVArray(_lineS, MdConstants::MaxScreenWidth);
+	SV(_pixel);
+	SV(_eventIndex);
+	SV(_inVblank);
+	SV(_vBorderForgotten);
+	SV(_topBorder);
+	SV(_frameH40);
+	SV(_interlacedFrame);
+	SV(_interlacedOdd);
+	SVArray(_lastScrollBPalettes, 2);
+
+	SV(_dmaActive);
+	SV(_isWriteMode);
+	SV(_locationBits);
+	SV(_location);
+	SV(_controlAddress);
+	SV(_dataAddress);
+	SV(_controlPending);
+
+	for(int i = 0; i < 4; i++) {
+		SVI(_fifo[i].Address);
+		SVI(_fifo[i].Value);
+		SVI(_fifo[i].Location);
+		SVI(_fifo[i].IsWrite);
+		SVI(_fifo[i].ByteWrite);
+		SVI(_fifo[i].SecondHalf);
+		SVI(_fifo[i].Latency);
+	}
+	SV(_fifoCount);
+	SV(_fifoPopIndex);
+	SV(_fifoPushIndex);
+	SV(_dmaLatency);
+	SV(_fillDataReady);
+	SV(_fillData);
+	SV(_copyOddSlot);
+	SV(_displayEnablePending);
+	SV(_dmaSource);
+	SV(_dmaLength);
+
+	SV(_vIntPending);
+	SV(_hIntPending);
+	SV(_hIntCounter);
+	SV(_z80IntActive);
+	SV(_hvLatch);
+	SV(_hvLatched);
+
+	SV(_spriteOverflow);
+	SV(_spriteCollision);
+	SV(_dotOverflowOnPrevLine);
+	SV(_pixelsDisabledDuringHblank);
+	SV(_spriteDisplayEnabled);
+	SV(_displayEnabledPixel);
+
+	SpriteBuffers* buffers[2] = { &_sprites, &_spritesOdd };
+	for(int b = 0; b < 2; b++) {
+		SpriteBuffers& buf = *buffers[b];
+		SVArray(buf.ScannedIds, 80);
+		SV(buf.ScannedCount);
+		SV(buf.SpriteCount);
+		SVArray(buf.LastTileAddresses, 40);
+		for(int i = 0; i < 80; i++) {
+			SVI(buf.Sprites[i].Pattern);
+			SVI(buf.Sprites[i].Y);
+			SVI(buf.Sprites[i].X);
+			SVI(buf.Sprites[i].WidthCells);
+			SVI(buf.Sprites[i].HeightCells);
+			SVI(buf.Sprites[i].Palette);
+			SVI(buf.Sprites[i].VFlip);
+			SVI(buf.Sprites[i].HFlip);
+			SVI(buf.Sprites[i].Priority);
+		}
+		for(int i = 0; i < 320; i++) {
+			SVI(buf.Pixels[i].Color);
+			SVI(buf.Pixels[i].Palette);
+			SVI(buf.Pixels[i].Priority);
+		}
+	}
 
 	if(!s.IsSaving()) {
-		UpdateDecodedRegisters();
+		DecodeRegs(_state.Regs, _regs);
+		if(_displayEnablePending) {
+			_regs.DisplayEnabled = false;
+		}
+		_latched = _regs;
+		UpdateEventTimes();
+		RefreshPalette();
 	}
 }

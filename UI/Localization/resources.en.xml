@@ -628,6 +628,8 @@
 			<Control ID="chkMdDisablePlaneA">Disable plane A</Control>
 			<Control ID="chkMdDisablePlaneB">Disable plane B</Control>
 			<Control ID="chkMdDisableWindow">Disable window plane</Control>
+			<Control ID="chkMdShowHorizontalBorder">Show horizontal border (left/right)</Control>
+			<Control ID="chkMdShowVerticalBorder">Show vertical border (top/bottom)</Control>
 			<Control ID="chkDisableSprites">Disable sprites</Control>
 
 			<Control ID="lblOverscan">Overscan</Control>

@@ -66,7 +66,7 @@ public:
 	OverscanDimensions GetOverscan() override
 	{
 		OverscanDimensions overscan = BaseVideoFilter::GetOverscan();
-		if(_baseFrameInfo.Height > 240) {
+		if(_baseFrameInfo.Height > 300) {
 			//Interlace mode 2 outputs twice as many lines
 			overscan.Top *= 2;
 			overscan.Bottom *= 2;

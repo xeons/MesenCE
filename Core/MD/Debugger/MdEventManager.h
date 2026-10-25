@@ -56,7 +56,10 @@ private:
 	uint16_t* _ppuBuffer = nullptr;
 	uint16_t _rowWidths[MdConstants::MaxScreenHeight] = {};
 	uint32_t _frameHeight = 224;
-	bool _interlaceMode2 = false;
+	bool _interlaced = false;
+	uint16_t _frameLeftBorder = 0;
+	uint16_t _frameActiveWidth = 320;
+	uint16_t _frameTopBorder = 0;
 	uint16_t _activeStartColumn = 0;
 
 	void SetVdpTarget(DebugEventInfo& evt, uint8_t port);

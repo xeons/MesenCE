@@ -84,12 +84,16 @@ void MdFmAudio::Write(uint8_t addr, uint8_t value)
 
 	addr &= 0x03;
 	if(addr & 0x01) {
-		_state.Registers[addr >> 1][_state.SelectedAddress[addr >> 1]] = value;
+		//There is a single address latch: both data ports write to the part selected by the last address port write
+		//(Overdrive 2 writes channel 4-6 registers through $4001)
+		uint8_t part = _addressHigh ? 1 : 0;
+		_state.Registers[part][_state.SelectedAddress[part]] = value;
+		_opn.write(_addressHigh ? 3 : 1, value);
 	} else {
+		_addressHigh = addr == 2;
 		_state.SelectedAddress[addr >> 1] = value;
+		_opn.write(addr, value);
 	}
-
-	_opn.write(addr, value);
 }
 
 void MdFmAudio::ymfm_set_timer(uint32_t timerId, int32_t durationInClocks)
@@ -128,6 +132,7 @@ void MdFmAudio::Serialize(Serializer& s)
 	SVArray(_state.Timers, 2);
 	SV(_prevMasterClock);
 	SV(_busyEndClock);
+	SV(_addressHigh);
 
 	if(s.IsSaving()) {
 		_opn.save_restore(state);

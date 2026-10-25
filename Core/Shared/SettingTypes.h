@@ -880,6 +880,8 @@ struct MdConfig
 	bool DisablePlaneA = false;
 	bool DisablePlaneB = false;
 	bool DisableWindow = false;
+	bool ShowHorizontalBorder = false;
+	bool ShowVerticalBorder = false;
 
 	uint32_t FmVolume = 100;
 	uint32_t PsgVolume = 100;

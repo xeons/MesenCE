@@ -77,6 +77,29 @@ void MdMemoryManager::RefreshMappings()
 	}
 }
 
+void MdMemoryManager::ApplyRefresh()
+{
+	constexpr uint64_t interval = MdMemoryManager::RefreshInterval * MdConstants::CpuDivider;
+	uint64_t elapsed = _masterClock - _lastRefreshClock;
+	_lastRefreshClock = _masterClock - (elapsed % interval);
+
+	//Refresh delays depend on where the 68000 is executing from (2 cycles from ROM, 3 from work RAM)
+	constexpr uint8_t waitCycles[8] = { 2, 2, 2, 2, 0, 0, 0, 3 };
+	uint8_t wait = waitCycles[(_cpu->GetState().PC >> 21) & 0x07];
+	if(wait) {
+		Exec(wait);
+	}
+}
+
+void MdMemoryManager::ProcessZ80BusAccess()
+{
+	_z80->AddWaitCycles(MdMemoryManager::Z80BankAccessZ80Wait);
+
+	//The 68000 is stalled for 10 cycles on 7 out of 10 accesses, and 9 cycles otherwise (~9.7 on average)
+	_state.PendingCpuStallCycles += 9 + (_z80StallCounter < 7 ? 1 : 0);
+	_z80StallCounter = (_z80StallCounter + 1) % 10;
+}
+
 void MdMemoryManager::ProcessCpuStall()
 {
 	uint32_t cycles = _state.PendingCpuStallCycles;
@@ -178,6 +201,11 @@ T MdMemoryManager::ReadZ80Area(uint32_t addr)
 		return GetOpenBus<T>(addr);
 	}
 
+	if constexpr(!isPeek) {
+		//68000 accesses to the Z80's bus take an extra cycle
+		Exec(1);
+	}
+
 	uint8_t value;
 	uint16_t z80Addr = addr & 0x7FFF;
 	if(z80Addr < 0x4000) {
@@ -206,6 +234,8 @@ void MdMemoryManager::WriteZ80Area(uint32_t addr, T value)
 	if(!_z80->IsBusGranted()) {
 		return;
 	}
+
+	Exec(1);
 
 	//Word writes only write the high byte (to the even address)
 	uint8_t byteValue;
@@ -371,6 +401,13 @@ void MdMemoryManager::WriteVdpArea(uint32_t addr, T value)
 			} else if(addr & 0x01) {
 				_psg->Write(value);
 			}
+		} else if(port >= 0x1C) {
+			//Undocumented debug register (used by Overdrive 2)
+			if constexpr(std::is_same<T, uint16_t>::value) {
+				_vdp->WriteDebugRegister(value);
+			} else {
+				_vdp->WriteDebugRegister((value << 8) | value);
+			}
 		}
 		return;
 	}
@@ -397,11 +434,14 @@ void MdMemoryManager::WriteVdpArea(uint32_t addr, T value)
 
 	_vdp->WritePort(vdpPort, wordValue);
 
-	if(!_inZ80Access) {
+	if(!_inZ80Access && _vdp->IsCpuBusLocked()) {
 		while(_vdp->IsCpuBusLocked()) {
 			//The 68000 is stopped while a 68000->VDP DMA transfer runs
 			Exec(1);
 		}
+
+		//Refresh is not done while the VDP owns the bus
+		_lastRefreshClock = _masterClock;
 	}
 }
 
@@ -453,11 +493,13 @@ uint8_t MdMemoryManager::ReadZ80Bank(uint16_t addr)
 {
 	uint32_t cpuAddr = _z80->GetBankAddress() | (addr & 0x7FFF);
 
-	_z80->AddWaitCycles(MdMemoryManager::Z80BankAccessZ80Wait);
-	_state.PendingCpuStallCycles += MdMemoryManager::Z80BankAccessCpuStall;
+	ProcessZ80BusAccess();
 
 	if((cpuAddr >> 16) == 0xA0) {
 		//TODOMD the Z80 accessing its own address space through the bank window locks up the real hardware
+		return 0xFF;
+	} else if(cpuAddr >= 0xE00000) {
+		//The Z80 can't read the 68000's work RAM
 		return 0xFF;
 	}
 
@@ -471,8 +513,7 @@ void MdMemoryManager::WriteZ80Bank(uint16_t addr, uint8_t value)
 {
 	uint32_t cpuAddr = _z80->GetBankAddress() | (addr & 0x7FFF);
 
-	_z80->AddWaitCycles(MdMemoryManager::Z80BankAccessZ80Wait);
-	_state.PendingCpuStallCycles += MdMemoryManager::Z80BankAccessCpuStall;
+	ProcessZ80BusAccess();
 
 	if((cpuAddr >> 16) == 0xA0) {
 		return;
@@ -498,6 +539,7 @@ uint8_t MdMemoryManager::ReadZ80(uint16_t addr, MemoryOperationType opType)
 
 		case 3:
 			if(addr >= 0x7F00 && addr < 0x7F10) {
+				ProcessZ80BusAccess();
 				_inZ80Access = true;
 				value = ReadVdpArea<uint8_t, false>(0xC00000 | (addr & 0x1F));
 				_inZ80Access = false;
@@ -535,6 +577,7 @@ void MdMemoryManager::WriteZ80(uint16_t addr, uint8_t value, MemoryOperationType
 			if(addr < 0x6100) {
 				_z80->WriteBankRegister(value);
 			} else if(addr >= 0x7F00 && addr < 0x7F20) {
+				ProcessZ80BusAccess();
 				_inZ80Access = true;
 				WriteVdpArea<uint8_t>(0xC00000 | (addr & 0x1F), value);
 				_inZ80Access = false;
@@ -687,7 +730,8 @@ void MdMemoryManager::Serialize(Serializer& s)
 	SV(_state.OpenBus);
 	SV(_state.PendingCpuStallCycles);
 	SV(_masterClock);
-	SV(_lastRefreshCycle);
+	SV(_lastRefreshClock);
+	SV(_z80StallCounter);
 
 	if(!s.IsSaving()) {
 		RefreshMappings();

@@ -87,6 +87,8 @@
 					<v:VideoConfigOverrideView DataContext="{Binding Config.ConfigOverrides}" />
 
 					<c:OptionSection Header="{l:Translate lblMiscSettings}">
+						<CheckBox IsChecked="{Binding Config.ShowHorizontalBorder}" Content="{l:Translate chkMdShowHorizontalBorder}" />
+						<CheckBox IsChecked="{Binding Config.ShowVerticalBorder}" Content="{l:Translate chkMdShowVerticalBorder}" />
 						<CheckBox IsChecked="{Binding Config.RemoveSpriteLimit}" Content="{l:Translate chkRemoveSpriteLimit}" />
 						<c:CheckBoxWarning IsChecked="{Binding Config.DisablePlaneA}" Text="{l:Translate chkMdDisablePlaneA}" />
 						<c:CheckBoxWarning IsChecked="{Binding Config.DisablePlaneB}" Text="{l:Translate chkMdDisablePlaneB}" />

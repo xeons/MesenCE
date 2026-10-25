@@ -282,7 +282,7 @@ public:
 	uint32_t GetBankAddress() { return (uint32_t)_state.BankRegister << 15; }
 
 	//Used to delay the Z80 when it accesses the 68000's bus
-	void AddWaitCycles(uint8_t cycles) { ExecCycles(cycles); }
+	void AddWaitCycles(uint8_t cycles);
 
 	void Exec();
 

@@ -25,6 +25,8 @@ public partial class MdConfig : BaseConfig<MdConfig>
 	[ObservableProperty] public partial bool DisablePlaneA { get; set; } = false;
 	[ObservableProperty] public partial bool DisablePlaneB { get; set; } = false;
 	[ObservableProperty] public partial bool DisableWindow { get; set; } = false;
+	[ObservableProperty] public partial bool ShowHorizontalBorder { get; set; } = false;
+	[ObservableProperty] public partial bool ShowVerticalBorder { get; set; } = false;
 
 	[ObservableProperty][MinMax(0, 100)] public partial UInt32 FmVolume { get; set; } = 100;
 	[ObservableProperty][MinMax(0, 100)] public partial UInt32 PsgVolume { get; set; } = 100;
@@ -48,6 +50,8 @@ public partial class MdConfig : BaseConfig<MdConfig>
 			DisablePlaneA = DisablePlaneA,
 			DisablePlaneB = DisablePlaneB,
 			DisableWindow = DisableWindow,
+			ShowHorizontalBorder = ShowHorizontalBorder,
+			ShowVerticalBorder = ShowVerticalBorder,
 
 			FmVolume = FmVolume,
 			PsgVolume = PsgVolume,
@@ -80,6 +84,8 @@ public struct InteropMdConfig
 	[MarshalAs(UnmanagedType.I1)] public bool DisablePlaneA;
 	[MarshalAs(UnmanagedType.I1)] public bool DisablePlaneB;
 	[MarshalAs(UnmanagedType.I1)] public bool DisableWindow;
+	[MarshalAs(UnmanagedType.I1)] public bool ShowHorizontalBorder;
+	[MarshalAs(UnmanagedType.I1)] public bool ShowVerticalBorder;
 
 	public UInt32 FmVolume;
 	public UInt32 PsgVolume;
