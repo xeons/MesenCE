@@ -2598,6 +2598,42 @@
     <ClInclude Include="SMS\SmsMemoryManager.h">
       <Filter>SMS</Filter>
     </ClInclude>
+    <ClInclude Include="MD\MdTypes.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdConsole.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdCpu.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdZ80.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdVdp.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdMemoryManager.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdPsg.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdFmAudio.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdCart.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdControlManager.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\MdDefaultVideoFilter.h">
+      <Filter>MD</Filter>
+    </ClInclude>
+    <ClInclude Include="MD\Input\MdController.h">
+      <Filter>MD\Input</Filter>
+    </ClInclude>
     <ClInclude Include="SMS\SmsVdp.h">
       <Filter>SMS</Filter>
     </ClInclude>
@@ -3173,6 +3209,36 @@
     <ClCompile Include="SMS\Carts\SmsCart.cpp">
       <Filter>SMS\Carts</Filter>
     </ClCompile>
+    <ClCompile Include="MD\MdConsole.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdCpu.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdCpu.Instructions.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdZ80.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdVdp.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdMemoryManager.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdPsg.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdFmAudio.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdCart.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
+    <ClCompile Include="MD\MdControlManager.cpp">
+      <Filter>MD</Filter>
+    </ClCompile>
     <ClCompile Include="SMS\SmsVdp.cpp">
       <Filter>SMS</Filter>
     </ClCompile>
@@ -3483,6 +3549,12 @@
     </Filter>
     <Filter Include="NES\Mappers\NSF">
       <UniqueIdentifier>{a27bca76-05ce-4940-a583-d50aef2668f8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="MD">
+      <UniqueIdentifier>{c43517d3-6fda-4b83-9454-aa5d599341e7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="MD\Input">
+      <UniqueIdentifier>{6818b43d-ca07-40fc-9890-e745adc4730b}</UniqueIdentifier>
     </Filter>
     <Filter Include="SMS">
       <UniqueIdentifier>{418fea7a-2766-464e-a553-e0647531fca2}</UniqueIdentifier>

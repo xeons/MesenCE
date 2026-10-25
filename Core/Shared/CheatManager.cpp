@@ -482,3 +482,4 @@ template void CheatManager::ApplyCheat<CpuType::Snes>(uint32_t addr, uint8_t& va
 template void CheatManager::ApplyCheat<CpuType::Pce>(uint32_t addr, uint8_t& value);
 template void CheatManager::ApplyCheat<CpuType::Gameboy>(uint32_t addr, uint8_t& value);
 template void CheatManager::ApplyCheat<CpuType::Sms>(uint32_t addr, uint8_t& value);
+template void CheatManager::ApplyCheat<CpuType::Md>(uint32_t addr, uint8_t& value);

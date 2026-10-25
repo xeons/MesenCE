@@ -75,6 +75,11 @@ extern "C"
 		_emu->GetSettings()->SetWsConfig(config);
 	}
 
+	DllExport void __stdcall SetMdConfig(MdConfig config)
+	{
+		_emu->GetSettings()->SetMdConfig(config);
+	}
+
 	DllExport void __stdcall SetGameConfig(GameConfig config)
 	{
 		_emu->GetSettings()->SetGameConfig(config);

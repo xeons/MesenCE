@@ -36,6 +36,7 @@ void EmuSettings::CopySettings(EmuSettings& src)
 	SetSmsConfig(src._sms);
 	SetGbaConfig(src._gba);
 	SetWsConfig(src._ws);
+	SetMdConfig(src._md);
 
 	_shader = src._shader;
 }
@@ -155,6 +156,14 @@ void EmuSettings::Serialize(Serializer& s)
 		case ConsoleType::Ws:
 			SV(_ws.Model);
 			SV(_ws.UseBootRom);
+			break;
+
+		case ConsoleType::MegaDrive:
+			SV(_md.RamPowerOnState);
+			SV(_md.Port1.Type);
+			SV(_md.Port2.Type);
+			SV(_md.Region);
+			SV(_md.FmChip);
 			break;
 
 		default:
@@ -342,6 +351,16 @@ WsConfig& EmuSettings::GetWsConfig()
 	return _ws;
 }
 
+void EmuSettings::SetMdConfig(MdConfig& config)
+{
+	_md = config;
+}
+
+MdConfig& EmuSettings::GetMdConfig()
+{
+	return _md;
+}
+
 void EmuSettings::SetGameConfig(GameConfig& config)
 {
 	_game = config;
@@ -501,6 +520,8 @@ OverscanDimensions EmuSettings::GetOverscan()
 				return _emu->GetRegion() == ConsoleRegion::Ntsc ? _sms.NtscOverscan : _sms.PalOverscan;
 			}
 
+		case ConsoleType::MegaDrive: return _emu->GetRegion() == ConsoleRegion::Pal ? _md.PalOverscan : _md.NtscOverscan;
+
 		case ConsoleType::Gameboy:
 		case ConsoleType::Gba:
 		case ConsoleType::Ws:
@@ -544,6 +565,18 @@ double EmuSettings::GetAspectRatio(ConsoleRegion region, FrameInfo baseFrameSize
 			} else if(_emu->GetRomInfo().Format == RomFormat::GameGear) {
 				//GG has a 6:5 PAR
 				return screenAspectRatio * (6.0 / 5.0);
+			} else if(_emu->GetConsoleType() == ConsoleType::MegaDrive) {
+				if(baseFrameSize.Height > 240) {
+					//Interlace mode 2 outputs twice as many lines
+					screenAspectRatio *= 2;
+				}
+
+				bool isPal = region == ConsoleRegion::Pal;
+				if(baseFrameSize.Width >= 320) {
+					//H40 mode's pixel clock is MCLK/8 (H32 is MCLK/10), so its pixels are 4/5 as wide
+					return screenAspectRatio * (isPal ? (11.0 / 8.0) : (8.0 / 7.0)) * 4.0 / 5.0;
+				}
+				return screenAspectRatio * (isPal ? (11.0 / 8.0) : (8.0 / 7.0));
 			}
 			return screenAspectRatio * ((region == ConsoleRegion::Pal || region == ConsoleRegion::Dendy) ? (11.0 / 8.0) : (8.0 / 7.0));
 
@@ -618,6 +651,7 @@ bool EmuSettings::HasRandomPowerOnState(ConsoleType consoleType)
 		case ConsoleType::PcEngine: return _pce.RamPowerOnState == RamState::Random || _pce.EnableRandomPowerOnState;
 		case ConsoleType::Sms: return _sms.RamPowerOnState == RamState::Random;
 		case ConsoleType::Gba: return _gba.RamPowerOnState == RamState::Random;
+		case ConsoleType::MegaDrive: return _md.RamPowerOnState == RamState::Random;
 	}
 
 	return false;

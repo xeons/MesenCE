@@ -322,6 +322,15 @@ namespace Mesen.Utilities
 						case VideoLayer.Sprite1: return (() => ConfigManager.Config.Ws.DisableSprites, (val) => ConfigManager.Config.Ws.DisableSprites = val);
 					}
 					break;
+
+				case ConsoleType.MegaDrive:
+					switch(layer) {
+						case VideoLayer.Bg1: return (() => ConfigManager.Config.Md.DisablePlaneA, (val) => ConfigManager.Config.Md.DisablePlaneA = val);
+						case VideoLayer.Bg2: return (() => ConfigManager.Config.Md.DisablePlaneB, (val) => ConfigManager.Config.Md.DisablePlaneB = val);
+						case VideoLayer.Bg3: return (() => ConfigManager.Config.Md.DisableWindow, (val) => ConfigManager.Config.Md.DisableWindow = val);
+						case VideoLayer.Sprite1: return (() => ConfigManager.Config.Md.DisableSprites, (val) => ConfigManager.Config.Md.DisableSprites = val);
+					}
+					break;
 			}
 
 			return (null, null);
@@ -366,6 +375,10 @@ namespace Mesen.Utilities
 			ConfigManager.Config.Ws.HideBgLayer1 = false;
 			ConfigManager.Config.Ws.HideBgLayer2 = false;
 			ConfigManager.Config.Ws.DisableSprites = false;
+			ConfigManager.Config.Md.DisablePlaneA = false;
+			ConfigManager.Config.Md.DisablePlaneB = false;
+			ConfigManager.Config.Md.DisableWindow = false;
+			ConfigManager.Config.Md.DisableSprites = false;
 			UpdateAllCoreConfig();
 			DisplayMessageHelper.DisplayMessage("Debug", ResourceHelper.GetMessage("AllLayersEnabled"));
 		}
@@ -380,6 +393,7 @@ namespace Mesen.Utilities
 			ConfigManager.Config.Sms.ApplyConfig();
 			ConfigManager.Config.Cv.ApplyConfig();
 			ConfigManager.Config.Ws.ApplyConfig();
+			ConfigManager.Config.Md.ApplyConfig();
 		}
 
 		private void SetEmulationSpeed(uint emulationSpeed)

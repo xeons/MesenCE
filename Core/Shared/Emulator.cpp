@@ -36,6 +36,7 @@
 #include "SMS/SmsConsole.h"
 #include "GBA/GbaConsole.h"
 #include "WS/WsConsole.h"
+#include "MD/MdConsole.h"
 #include "Debugger/Debugger.h"
 #include "Debugger/BaseEventManager.h"
 #include "Debugger/DebugTypes.h"
@@ -609,6 +610,7 @@ void Emulator::TryLoadRom(VirtualFile& romFile, LoadRomResult& result, unique_pt
 	TryLoadRom<SmsConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<GbaConsole>(romFile, result, console, useFileSignature);
 	TryLoadRom<WsConsole>(romFile, result, console, useFileSignature);
+	TryLoadRom<MdConsole>(romFile, result, console, useFileSignature);
 }
 
 template<typename T>
@@ -1132,6 +1134,11 @@ void Emulator::ResetDebugger(bool startDebugger)
 
 void Emulator::InitDebugger()
 {
+	if(GetConsoleType() == ConsoleType::MegaDrive) {
+		//TODOMD debugger is not implemented yet
+		return;
+	}
+
 	if(!_debugger) {
 		//Lock to make sure we don't try to start debuggers in 2 separate threads at once
 		auto lock = _debuggerLock.AcquireSafe();

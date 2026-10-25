@@ -605,6 +605,46 @@
 			<Control ID="chkAllowInvalidInput">Allow invalid input (e.g Down + Up or Left + Right at the same time)</Control>
 		</Form>
 
+		<Form ID="MdConfigView">
+			<Control ID="tpgGeneral">General</Control>
+			<Control ID="lblRegion">Region:</Control>
+			<Control ID="lblMdFmChip">FM sound chip:</Control>
+
+			<Control ID="tpgAudio">Audio</Control>
+			<Control ID="grpVolume">Volume</Control>
+			<Control ID="lblMdFmVolume">FM</Control>
+			<Control ID="lblMdPsgVolume">PSG</Control>
+
+			<Control ID="tpgEmulation">Emulation</Control>
+			<Control ID="lblDeveloperSettings">Recommended settings for developers (homebrew / ROM hacking)</Control>
+			<Control ID="lblRamPowerOnState">Default power on state for RAM: </Control>
+
+			<Control ID="tpgInput">Input</Control>
+
+			<Control ID="tpgVideo">Video</Control>
+
+			<Control ID="lblMiscSettings">Miscellaneous Settings</Control>
+			<Control ID="chkRemoveSpriteLimit">Remove sprite limit</Control>
+			<Control ID="chkMdDisablePlaneA">Disable plane A</Control>
+			<Control ID="chkMdDisablePlaneB">Disable plane B</Control>
+			<Control ID="chkMdDisableWindow">Disable window plane</Control>
+			<Control ID="chkDisableSprites">Disable sprites</Control>
+
+			<Control ID="lblOverscan">Overscan</Control>
+			<Control ID="lblOverscanNtsc">NTSC</Control>
+			<Control ID="lblOverscanPal">PAL</Control>
+		</Form>
+
+		<Form ID="MdInputConfigView">
+			<Control ID="grpControllers">Controllers</Control>
+
+			<Control ID="lblController1">Port 1:</Control>
+			<Control ID="lblController2">Port 2:</Control>
+
+			<Control ID="grpGeneral">General</Control>
+			<Control ID="chkAllowInvalidInput">Allow invalid input (e.g Down + Up or Left + Right at the same time)</Control>
+		</Form>
+
 		<Form ID="OtherConsolesConfigView">
 			<Control ID="tabColecoVision">ColecoVision</Control>
 		</Form>
@@ -701,6 +741,7 @@
 			<Control ID="tabPcEngine">PC Engine</Control>
 			<Control ID="tabSms">SMS</Control>
 			<Control ID="tabWs">WonderSwan</Control>
+			<Control ID="tabMd">Mega Drive</Control>
 			<Control ID="tabOtherConsoles">Other systems</Control>
 			<Control ID="tabPreferences">Preferences</Control>
 
@@ -757,6 +798,7 @@
 			<Control ID="chkSgRomFiles">SG-1000 roms: .sg</Control>
 			<Control ID="chkCvRomFiles">ColecoVision roms: .col</Control>
 			<Control ID="chkWsRomFiles">WonderSwan roms: .ws, .wsc, .pc2</Control>
+			<Control ID="chkMdRomFiles">Mega Drive roms: .md, .gen, .smd</Control>
 
 			<Control ID="grpDataStorageLocation">Data Storage Folder</Control>
 			<Control ID="btnChangeStorageFolder">Change folder...</Control>
@@ -1077,6 +1119,7 @@
 			<Control ID="lblPcEngine">PC Engine</Control>
 			<Control ID="lblSms">SMS</Control>
 			<Control ID="lblWs">WonderSwan</Control>
+			<Control ID="lblMd">Mega Drive</Control>
 		</Form>
 		
 		<Form ID="AudioPlayerView">
@@ -2067,6 +2110,13 @@ E
 			<Value ID="SmsController">SMS Controller</Value>
 			<Value ID="SmsLightPhaser">Light Phaser</Value>
 			<Value ID="ColecoVisionController">ColecoVision Controller</Value>
+
+			<Value ID="MdController3Button">3-button Controller</Value>
+			<Value ID="MdController6Button">6-button Controller</Value>
+		</Enum>
+		<Enum ID="MdFmChip">
+			<Value ID="Ym2612">YM2612 (Model 1, discrete)</Value>
+			<Value ID="Ym3438">YM3438 (Model 2, ASIC)</Value>
 		</Enum>
 		<Enum ID="NesJissenMahjongButtons">
 			<Value ID="A">A</Value>
@@ -2865,6 +2915,8 @@ E
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Gba">GBA</Value>
 			<Value ID="Ws">WS</Value>
+			<Value ID="Md">68000</Value>
+			<Value ID="MdZ80">Z80</Value>
 		</Enum>
 		
 		<Enum ID="MemoryType">
@@ -2966,6 +3018,16 @@ E
 			<Value ID="WsBootRom">Boot ROM</Value>
 			<Value ID="WsInternalEeprom">IEEPROM (Internal)</Value>
 			<Value ID="WsPort">I/O Port</Value>
+
+			<Value ID="MdMemory">68000 Memory</Value>
+			<Value ID="MdZ80Memory">Z80 Memory</Value>
+			<Value ID="MdPrgRom">ROM</Value>
+			<Value ID="MdWorkRam">Work RAM</Value>
+			<Value ID="MdZ80Ram">Z80 RAM</Value>
+			<Value ID="MdSaveRam">Save RAM</Value>
+			<Value ID="MdVideoRam">Video RAM</Value>
+			<Value ID="MdColorRam">Color RAM</Value>
+			<Value ID="MdVsRam">Vertical Scroll RAM</Value>
 
 			<Value ID="None">None</Value>
 		</Enum>
@@ -3703,6 +3765,7 @@ E
 			<Value ID="PcEngine">PC Engine</Value>
 			<Value ID="Sms">SMS</Value>
 			<Value ID="Ws">WonderSwan</Value>
+			<Value ID="Md">Mega Drive</Value>
 			<Value ID="OtherConsoles">Other systems</Value>
 
 			<Value ID="Resume">Resume</Value>

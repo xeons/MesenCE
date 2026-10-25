@@ -53,6 +53,9 @@
 		<DataTemplate DataType="{x:Type vm:WsConfigViewModel}">
 			<v:WsConfigView />
 		</DataTemplate>
+		<DataTemplate DataType="{x:Type vm:MdConfigViewModel}">
+			<v:MdConfigView />
+		</DataTemplate>
 		<DataTemplate DataType="{x:Type vm:OtherConsolesConfigViewModel}">
 			<v:OtherConsolesConfigView />
 		</DataTemplate>
@@ -171,6 +174,15 @@
 					<StackPanel Orientation="Horizontal">
 						<Image Source="/Assets/WsIcon.png" Margin="0 0 10 0" />
 						<TextBlock VerticalAlignment="Center" Text="{l:Translate tabWs}" />
+					</StackPanel>
+				</TabItem.Header>
+			</TabItem>
+
+			<TabItem Content="{Binding Md}">
+				<TabItem.Header>
+					<StackPanel Orientation="Horizontal">
+						<Image Source="/Assets/MdIcon.png" Margin="0 0 10 0" />
+						<TextBlock VerticalAlignment="Center" Text="{l:Translate tabMd}" />
 					</StackPanel>
 				</TabItem.Header>
 			</TabItem>

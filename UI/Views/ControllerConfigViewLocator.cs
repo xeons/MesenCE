@@ -35,6 +35,8 @@ namespace Mesen.Views
 					ControllerType.WsController => new WsControllerView(),
 					ControllerType.WsControllerVertical => new WsControllerVerticalView(),
 					ControllerType.Pcv2Controller => new WsPcv2ControllerView(),
+					ControllerType.MdController3Button => new MdControllerView(),
+					ControllerType.MdController6Button => new MdControllerView(true),
 					_ => new DefaultControllerView()
 				};
 			}

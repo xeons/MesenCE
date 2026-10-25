@@ -416,6 +416,10 @@ namespace Mesen.Config
 		WsController,
 		WsControllerVertical,
 		Pcv2Controller,
+
+		//Mega Drive
+		MdController3Button,
+		MdController6Button,
 	}
 
 	public static class ControllerTypeExtensions
@@ -443,6 +447,8 @@ namespace Mesen.Config
 				case ControllerType.Pcv2Controller:
 				case ControllerType.Pachinko:
 				case ControllerType.FcnsController:
+				case ControllerType.MdController3Button:
+				case ControllerType.MdController6Button:
 					return true;
 			}
 
@@ -471,6 +477,8 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.MdController3Button:
+				case ControllerType.MdController6Button:
 					return true;
 			}
 
@@ -521,6 +529,8 @@ namespace Mesen.Config
 				case ControllerType.WsController:
 				case ControllerType.WsControllerVertical:
 				case ControllerType.Pcv2Controller:
+				case ControllerType.MdController3Button:
+				case ControllerType.MdController6Button:
 					return true;
 			}
 

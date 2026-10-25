@@ -276,7 +276,11 @@ enum class ControllerType
 	//WS
 	WsController,
 	WsControllerVertical,
-	Pcv2Controller
+	Pcv2Controller,
+
+	//Mega Drive
+	MdController3Button,
+	MdController6Button
 };
 
 struct KeyMapping
@@ -400,7 +404,8 @@ enum class ConsoleType
 	PcEngine = 3,
 	Sms = 4,
 	Gba = 5,
-	Ws = 6
+	Ws = 6,
+	MegaDrive = 7
 };
 
 enum class GameboyModel
@@ -854,6 +859,35 @@ struct WsConfig
 	uint32_t Channel5Vol = 100;
 };
 
+enum class MdFmChip : uint8_t
+{
+	Ym2612,
+	Ym3438
+};
+
+struct MdConfig
+{
+	ControllerConfig Port1;
+	ControllerConfig Port2;
+
+	ConsoleRegion Region = ConsoleRegion::Auto;
+	RamState RamPowerOnState = RamState::Random;
+	MdFmChip FmChip = MdFmChip::Ym2612;
+
+	bool AllowInvalidInput = false;
+	bool RemoveSpriteLimit = false;
+	bool DisableSprites = false;
+	bool DisablePlaneA = false;
+	bool DisablePlaneB = false;
+	bool DisableWindow = false;
+
+	uint32_t FmVolume = 100;
+	uint32_t PsgVolume = 100;
+
+	OverscanDimensions NtscOverscan = {};
+	OverscanDimensions PalOverscan = {};
+};
+
 struct AudioPlayerConfig
 {
 	uint32_t Volume = 100;
@@ -1178,4 +1212,6 @@ enum class DebuggerFlags
 	SmsDebuggerEnabled = (1 << 10),
 	GbaDebuggerEnabled = (1 << 11),
 	WsDebuggerEnabled = (1 << 12),
+	MdDebuggerEnabled = (1 << 13),
+	MdZ80DebuggerEnabled = (1 << 14),
 };

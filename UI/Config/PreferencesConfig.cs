@@ -48,6 +48,7 @@ namespace Mesen.Config
 		[ObservableProperty] public partial bool AssociateSgRomFiles { get; set; } = false;
 		[ObservableProperty] public partial bool AssociateCvRomFiles { get; set; } = false;
 		[ObservableProperty] public partial bool AssociateWsRomFiles { get; set; } = false;
+		[ObservableProperty] public partial bool AssociateMdRomFiles { get; set; } = false;
 
 		[ObservableProperty] public partial bool EnableAutoSaveState { get; set; } = true;
 		[ObservableProperty] public partial UInt32 AutoSaveStateDelay { get; set; } = 5;

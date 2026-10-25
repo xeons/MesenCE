@@ -97,6 +97,10 @@ namespace Mesen.Config
 			CreateMimeType("x-mesen-wsc", "wsc", "WonderSwan Color ROM", mimeTypes, cfg.AssociateWsRomFiles);
 			CreateMimeType("x-mesen-pc2", "pc2", "Pocket Challenge V2 ROM", mimeTypes, cfg.AssociateWsRomFiles);
 
+			CreateMimeType("x-mesen-md", "md", "Mega Drive ROM", mimeTypes, cfg.AssociateMdRomFiles);
+			CreateMimeType("x-mesen-gen", "gen", "Genesis ROM", mimeTypes, cfg.AssociateMdRomFiles);
+			CreateMimeType("x-mesen-smd", "smd", "Mega Drive ROM (interleaved)", mimeTypes, cfg.AssociateMdRomFiles);
+
 			//Icon used for shortcuts
 			using(FileStream file = File.Open(Path.Combine(iconFolder, "MesenIcon.png"), FileMode.OpenOrCreate, FileAccess.Write)) {
 				AssetLoader.Open(new Uri("avares://Mesen/Assets/MesenIcon.png")).CopyTo(file);
@@ -222,6 +226,10 @@ namespace Mesen.Config
 			FileAssociationHelper.UpdateFileAssociation("ws", cfg.AssociateWsRomFiles);
 			FileAssociationHelper.UpdateFileAssociation("wsc", cfg.AssociateWsRomFiles);
 			FileAssociationHelper.UpdateFileAssociation("pc2", cfg.AssociateWsRomFiles);
+
+			FileAssociationHelper.UpdateFileAssociation("md", cfg.AssociateMdRomFiles);
+			FileAssociationHelper.UpdateFileAssociation("gen", cfg.AssociateMdRomFiles);
+			FileAssociationHelper.UpdateFileAssociation("smd", cfg.AssociateMdRomFiles);
 		}
 
 		static private void UpdateFileAssociation(string extension, bool associate)

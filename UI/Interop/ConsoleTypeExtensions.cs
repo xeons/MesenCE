@@ -14,6 +14,7 @@ namespace Mesen.Interop
 				ConsoleType.Sms => CpuType.Sms,
 				ConsoleType.Gba => CpuType.Gba,
 				ConsoleType.Ws => CpuType.Ws,
+				ConsoleType.MegaDrive => CpuType.Md,
 				_ => throw new Exception("Invalid type")
 			};
 		}
@@ -23,6 +24,16 @@ namespace Mesen.Interop
 			return type switch {
 				ConsoleType.Gba => false,
 				ConsoleType.Ws => false,
+				ConsoleType.MegaDrive => false,
+				_ => true
+			};
+		}
+
+		public static bool SupportsDebugger(this ConsoleType type)
+		{
+			return type switch {
+				//TODOMD debugger support
+				ConsoleType.MegaDrive => false,
 				_ => true
 			};
 		}

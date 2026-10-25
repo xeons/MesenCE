@@ -1233,6 +1233,8 @@ template void Debugger::ProcessInstruction<CpuType::Pce>();
 template void Debugger::ProcessInstruction<CpuType::Sms>();
 template void Debugger::ProcessInstruction<CpuType::Gba>();
 template void Debugger::ProcessInstruction<CpuType::Ws>();
+template void Debugger::ProcessInstruction<CpuType::Md>();
+template void Debugger::ProcessInstruction<CpuType::MdZ80>();
 
 template void Debugger::ProcessMemoryRead<CpuType::Snes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Sa1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
@@ -1253,6 +1255,9 @@ template void Debugger::ProcessMemoryRead<CpuType::Gba, 2>(uint32_t addr, uint32
 template void Debugger::ProcessMemoryRead<CpuType::Gba, 4>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Ws, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template void Debugger::ProcessMemoryRead<CpuType::Ws, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
+template void Debugger::ProcessMemoryRead<CpuType::Md, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+template void Debugger::ProcessMemoryRead<CpuType::Md, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
+template void Debugger::ProcessMemoryRead<CpuType::MdZ80>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 
 template bool Debugger::ProcessMemoryWrite<CpuType::Snes>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Sa1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
@@ -1272,6 +1277,9 @@ template bool Debugger::ProcessMemoryWrite<CpuType::Gba, 2>(uint32_t addr, uint3
 template bool Debugger::ProcessMemoryWrite<CpuType::Gba, 4>(uint32_t addr, uint32_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Ws, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 template bool Debugger::ProcessMemoryWrite<CpuType::Ws, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
+template bool Debugger::ProcessMemoryWrite<CpuType::Md, 1>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
+template bool Debugger::ProcessMemoryWrite<CpuType::Md, 2>(uint32_t addr, uint16_t& value, MemoryOperationType opType);
+template bool Debugger::ProcessMemoryWrite<CpuType::MdZ80>(uint32_t addr, uint8_t& value, MemoryOperationType opType);
 
 template void Debugger::ProcessMemoryAccess<CpuType::Nes, MemoryType::NesMapperRam, MemoryOperationType::Read>(uint32_t addr, uint8_t& value);
 template void Debugger::ProcessMemoryAccess<CpuType::Nes, MemoryType::NesMapperRam, MemoryOperationType::Write>(uint32_t addr, uint8_t& value);
@@ -1303,6 +1311,8 @@ template void Debugger::ProcessHaltedCpu<CpuType::Gameboy>();
 template void Debugger::ProcessHaltedCpu<CpuType::Sms>();
 template void Debugger::ProcessHaltedCpu<CpuType::Gba>();
 template void Debugger::ProcessHaltedCpu<CpuType::Ws>();
+template void Debugger::ProcessHaltedCpu<CpuType::Md>();
+template void Debugger::ProcessHaltedCpu<CpuType::MdZ80>();
 
 template void Debugger::ProcessInterrupt<CpuType::Snes>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::Sa1>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
@@ -1312,6 +1322,8 @@ template void Debugger::ProcessInterrupt<CpuType::Pce>(uint32_t originalPc, uint
 template void Debugger::ProcessInterrupt<CpuType::Sms>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::Gba>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 template void Debugger::ProcessInterrupt<CpuType::Ws>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+template void Debugger::ProcessInterrupt<CpuType::Md>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
+template void Debugger::ProcessInterrupt<CpuType::MdZ80>(uint32_t originalPc, uint32_t currentPc, bool forNmi);
 
 template void Debugger::ProcessPpuRead<CpuType::Snes>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
 template void Debugger::ProcessPpuRead<CpuType::Gameboy>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
@@ -1319,6 +1331,7 @@ template void Debugger::ProcessPpuRead<CpuType::Nes>(uint16_t addr, uint8_t& val
 template void Debugger::ProcessPpuRead<CpuType::Pce>(uint16_t addr, uint16_t& value, MemoryType memoryType, MemoryOperationType opType);
 template void Debugger::ProcessPpuRead<CpuType::Pce>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
 template void Debugger::ProcessPpuRead<CpuType::Sms>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
+template void Debugger::ProcessPpuRead<CpuType::Md>(uint16_t addr, uint8_t& value, MemoryType memoryType, MemoryOperationType opType);
 
 template void Debugger::ProcessPpuWrite<CpuType::Snes>(uint16_t addr, uint8_t& value, MemoryType memoryType);
 template void Debugger::ProcessPpuWrite<CpuType::Gameboy>(uint16_t addr, uint8_t& value, MemoryType memoryType);
@@ -1326,6 +1339,7 @@ template void Debugger::ProcessPpuWrite<CpuType::Nes>(uint16_t addr, uint8_t& va
 template void Debugger::ProcessPpuWrite<CpuType::Pce>(uint16_t addr, uint16_t& value, MemoryType memoryType);
 template void Debugger::ProcessPpuWrite<CpuType::Pce>(uint16_t addr, uint8_t& value, MemoryType memoryType);
 template void Debugger::ProcessPpuWrite<CpuType::Sms>(uint16_t addr, uint8_t& value, MemoryType memoryType);
+template void Debugger::ProcessPpuWrite<CpuType::Md>(uint16_t addr, uint8_t& value, MemoryType memoryType);
 
 template void Debugger::ProcessPpuCycle<CpuType::Snes>();
 template void Debugger::ProcessPpuCycle<CpuType::Gameboy>();
@@ -1334,6 +1348,7 @@ template void Debugger::ProcessPpuCycle<CpuType::Pce>();
 template void Debugger::ProcessPpuCycle<CpuType::Sms>();
 template void Debugger::ProcessPpuCycle<CpuType::Gba>();
 template void Debugger::ProcessPpuCycle<CpuType::Ws>();
+template void Debugger::ProcessPpuCycle<CpuType::Md>();
 
 template void Debugger::ProcessBreakConditions<1>(CpuType sourceCpu, StepRequest& step, BreakpointManager* bpManager, MemoryOperationInfo& operation, AddressInfo& addressInfo);
 template void Debugger::ProcessBreakConditions<2>(CpuType sourceCpu, StepRequest& step, BreakpointManager* bpManager, MemoryOperationInfo& operation, AddressInfo& addressInfo);

@@ -79,6 +79,7 @@ private:
 			case CpuType::Nes: return 8;
 			case CpuType::Pce: return 13;
 			case CpuType::Sms: return 8;
+			case CpuType::Md: return 16;
 			default: throw std::runtime_error("unsupported cpu type");
 		}
 	}
